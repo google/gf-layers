@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="gf_layers_files" pattern="file[gf-vulkan-layers]:src//*||file[gf-vulkan-layers]:scripts//*" />
+</component>

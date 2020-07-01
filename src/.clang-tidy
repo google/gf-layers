@@ -1,0 +1,27 @@
+---
+Checks: >
+  *,
+  -modernize-use-trailing-return-type,
+  -cppcoreguidelines-pro-type-vararg,
+  -cert-dcl50-cpp,
+  -hicpp-vararg,
+  -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-const-cast,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -hicpp-no-array-decay,
+  -fuchsia-default-arguments-calls,
+
+# Allow array (with a length) to decay to a pointer.
+# We will already be warned against using arrays, so decay will
+# probably only occur when we have no other choice.
+# -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+# -hicpp-no-array-decay,
+
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: false
+FormatStyle:     file
+...

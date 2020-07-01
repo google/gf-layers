@@ -1,0 +1,7 @@
+; Linker script for MSVC.
+; Generated file; do not edit.
+LIBRARY VK_LAYER_GF_frame_counter
+EXPORTS
+    VK_LAYER_GF_frame_counterNegotiateLoaderLayerInterfaceVersion
+    VK_LAYER_GF_frame_counterGetInstanceProcAddr
+    VK_LAYER_GF_frame_counterGetDeviceProcAddr

@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+
+# Copyright 2020 The gf-layers Project Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+set -u
+set -x
+
+# Sanity check to ensure we are in the repo root.
+test -d ./src/gf_layers_layer_util/
+test -f ./src/.clang-format
+test -f ./src/iwyu.imp
+
+GF_LAYERS_REPO_ROOT="$(pwd)"
+export GF_LAYERS_REPO_ROOT
+
+export CC=clang-10
+export CXX=clang++-10
+
+cd temp/
+
+
+# Get clang-10, clang-format-10, clang-tidy-10.
+
+CLANG_FILE="clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
+CLANG_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.0/clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
+CLANG_OUT="${CLANG_FILE%.tar.xz}"
+
+if test ! -f "${CLANG_FILE}.touch"; then
+  curl -sSLo "${CLANG_FILE}" "${CLANG_URL}"
+  tar xf "${CLANG_FILE}"
+  # Make some *-10 symlinks.
+  ln -s clang++ "${CLANG_OUT}/bin/clang++-10"
+  ln -s clang-format "${CLANG_OUT}/bin/clang-format-10"
+  ln -s clang-tidy "${CLANG_OUT}/bin/clang-tidy-10"
+  touch "${CLANG_FILE}.touch"
+  rm "${CLANG_FILE}"
+fi
+
+PATH="$(pwd)/${CLANG_OUT}/bin:${PATH}"
+export PATH
+
+
+# Get cppcheck.
+
+CCPCHECK_OUT="cppcheck-2.1"
+
+if test ! -f "${CCPCHECK_OUT}.touch"; then
+  git clone --branch 2.1 --depth 1 https://github.com/danmar/cppcheck.git "${CCPCHECK_OUT}"
+  pushd "${CCPCHECK_OUT}"
+    mkdir build
+    pushd build
+      cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=./install
+      cmake --build . --config Release
+      cmake -P cmake_install.cmake --config Release
+    popd
+  popd
+  touch "${CCPCHECK_OUT}.touch"
+fi
+
+PATH="$(pwd)/${CCPCHECK_OUT}/build/install/bin:${PATH}"
+export PATH
+
+
+# Get cpplint.
+
+CPPLINT_OUT="ccplint-1.5.1"
+
+if test ! -f "${CPPLINT_OUT}.touch"; then
+  git clone --branch 1.5.1 --depth 1 https://github.com/cpplint/cpplint.git "${CPPLINT_OUT}"
+  pushd "${CPPLINT_OUT}"
+    # No build step.
+  popd
+  touch "${CPPLINT_OUT}.touch"
+fi
+
+CPPLINT_PY="$(pwd)/${CPPLINT_OUT}/cpplint.py"
+export CPPLINT_PY
+
+
+# Get include what you use.
+
+IWYU_OUT="iwyu-0.14"
+
+if test ! -f "${IWYU_OUT}.touch"; then
+  git clone --branch 0.14 --depth 1 https://github.com/include-what-you-use/include-what-you-use.git "${IWYU_OUT}"
+  pushd "${IWYU_OUT}"
+    mkdir build
+    pushd build
+      cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release "-DCMAKE_INSTALL_PREFIX=../../${CLANG_OUT}"
+      cmake --build . --config Release
+      cmake -P cmake_install.cmake --config Release
+    popd
+  popd
+  touch "${IWYU_OUT}.touch"
+fi
+# iwyu is installed alongside clang.
+
+
+# Get Android NDK.
+
+ANDROID_NDK_FILENAME="android-ndk-r21-linux-x86_64.zip"
+ANDROID_NDK_OUT="android-ndk-r21"
+
+if test ! -f "${ANDROID_NDK_OUT}.touch"; then
+  curl -sSLo "${ANDROID_NDK_FILENAME}" "https://dl.google.com/android/repository/${ANDROID_NDK_FILENAME}"
+  unzip -q "${ANDROID_NDK_FILENAME}"
+  rm "${ANDROID_NDK_FILENAME}"
+  test -d "${ANDROID_NDK_OUT}"
+  touch "${ANDROID_NDK_OUT}.touch"
+fi
+
+ANDROID_NDK_ROOT="$(pwd)/${ANDROID_NDK_OUT}"
+export ANDROID_NDK_ROOT
+
+
+cd "${GF_LAYERS_REPO_ROOT}"
+
+PATH="${GF_LAYERS_REPO_ROOT}/scripts:${PATH}"
+export PATH
+
+# If GF_LAYERS_SKIP_BASH is unset:
+if test -z ${GF_LAYERS_SKIP_BASH+x}; then
+  bash
+fi

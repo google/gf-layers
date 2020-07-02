@@ -35,13 +35,6 @@ case "$(uname)" in
   # shellcheck disable=SC2046
   docker rmi $(docker image ls -aq)
   df -h
-
-  # On Linux, source the dev shell to download clang-tidy and other tools.
-  # Developers should *run* the dev shell, but we want to continue executing this script.
-  export GF_LAYERS_SKIP_BASH=1
-
-  source ./dev_shell.sh.template
-
   ;;
 
 "Darwin")
@@ -68,5 +61,12 @@ pushd "${HOME}/bin"
   unzip ninja-build.zip
   ls
 popd
+
+
+# Source the dev shell to download clang-tidy and other tools.
+# Developers should *run* the dev shell, but we want to continue executing this script.
+export GF_LAYERS_SKIP_BASH=1
+
+source ./dev_shell.sh.template
 
 check_all.sh

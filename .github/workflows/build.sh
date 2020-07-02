@@ -36,14 +36,6 @@ case "$(uname)" in
   docker rmi $(docker image ls -aq)
   df -h
 
-  # On Linux, source the dev shell to download clang-tidy and other tools.
-  # Developers should *run* the dev shell, but we want to continue executing this script.
-  export GF_LAYERS_SKIP_COMPILER_SET=1
-  export GF_LAYERS_SKIP_ANDROID_NDK=1
-  export GF_LAYERS_SKIP_BASH=1
-
-  source ./dev_shell.sh.template
-
   # Provided by build.yml.
   export CC="${LINUX_CC}"
   export CXX="${LINUX_CXX}"
@@ -74,6 +66,35 @@ pushd "${HOME}/bin"
   unzip ninja-build.zip
   ls
 popd
+
+
+
+case "$(uname)" in
+"Linux")
+
+  # On Linux, source the dev shell to download clang-tidy and other tools.
+  # Developers should *run* the dev shell, but we want to continue executing this script.
+  export GF_LAYERS_SKIP_COMPILER_SET=1
+  export GF_LAYERS_SKIP_ANDROID_NDK=1
+  export GF_LAYERS_SKIP_BASH=1
+
+  source ./dev_shell.sh.template
+
+  ;;
+
+"Darwin")
+  ;;
+
+"MINGW"*|"MSYS_NT"*)
+  ;;
+
+*)
+  echo "Unknown OS"
+  exit 1
+  ;;
+esac
+
+
 
 
 mkdir -p build

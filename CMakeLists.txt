@@ -95,8 +95,20 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
             target_compile_options(${target} PRIVATE /Wall)
 
             # Warnings as errors.
-            if(${GF_LAYERS_WARNINGS_AS_ERRORS})
-                target_compile_options(${target} PRIVATE /WX)
+            if(GF_LAYERS_WARNINGS_AS_ERRORS)
+                target_compile_options(
+                        ${target}
+                        PRIVATE
+                        # Treat angle bracket headers as external headers.
+                        #/external:anglebrackets
+                        # Disable warnings from external headers.
+                        #/external:W0
+                        # Disable warnings
+                        /WX  # warnings as errors
+                        /wd4068  # warning C4068: unknown pragma
+                        /wdC4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
+                        /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
+                )
             endif()
         else()
 
@@ -116,7 +128,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
             endif()
 
             # Warnings as errors.
-            if(${GF_LAYERS_WARNINGS_AS_ERRORS})
+            if(GF_LAYERS_WARNINGS_AS_ERRORS)
                 target_compile_options(${target} PRIVATE -Werror)
             endif()
 

@@ -28,7 +28,8 @@ for CONFIG in Debug Release; do
     cmake \
       -G Ninja \
       ../.. \
-      "-DCMAKE_BUILD_TYPE=${CONFIG}"
+      "-DCMAKE_BUILD_TYPE=${CONFIG}" \
+      "-DGF_LAYERS_USE_LLVM_LIBCPP=1"
 
     cmake --build . --config "${CONFIG}"
 

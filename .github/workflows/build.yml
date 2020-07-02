@@ -52,12 +52,12 @@ jobs:
           # clang-6
           - os: ubuntu-16.04
             config: Debug
-            linux_cc: clang-6
-            linux_cxx: clang++-6
+            linux_cc: clang-6.0
+            linux_cxx: clang++-6.0
           - os: ubuntu-16.04
             config: Release
-            linux_cc: clang-6
-            linux_cxx: clang++-6
+            linux_cc: clang-6.0
+            linux_cxx: clang++-6.0
           # clang-8
           - os: ubuntu-16.04
             config: Debug

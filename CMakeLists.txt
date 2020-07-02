@@ -19,8 +19,16 @@ project(gf-layers
     DESCRIPTION "Vulkan layers"
     LANGUAGES CXX)
 
-# Enables warnings as errors, but only if gf-layers is the root project.
-option(GF_LAYERS_WARNINGS_AS_ERRORS ON)
+option(
+        GF_LAYERS_WARNINGS_AS_ERRORS
+        "Enables warnings as errors for gf-layers targets, but only if gf-layers is the root project."
+        ON)
+
+option(
+        GF_LAYERS_USE_LLVM_LIBCPP
+        "Use LLVM's libc++ when using Clang, plus various other LLVM options, but only if gf-layers is the root project."
+        OFF)
+
 
 ##
 ## Function: gf_layers_add_common(target)
@@ -44,42 +52,42 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
     # If using Clang then use LLVM's libc++ and various other options.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL Clang AND NOT ANDROID)
+    if(GF_LAYERS_USE_LLVM_LIBCPP AND CMAKE_CXX_COMPILER_ID STREQUAL Clang AND NOT ANDROID)
 
         # TODO(paulthomson): We may want to build a custom version of Clang instead of messing with its options.
 
-#        # Use LLVM's libc++ instead of GCC's libstdc++.
-#        add_compile_options(-stdlib=libc++)
-#        # Enable link time optimization; object files will be LLVM bitcode files.
-#        add_compile_options(-flto)
-#
-#        # Link options:
-#        # Use LLVM's libc++ instead of GCC's libstdc++.
-#        add_link_options(-stdlib=libc++)
-#        # Use LLVM's lld as the linker.
-#        add_link_options(-fuse-ld=lld)
-#        # Statically link the C++ library (which is not GCC's libstdc++ because of the -stdlib flag above).
-#        add_link_options(-static-libstdc++)
-#        # Use LLVM's compiler-rt instead of libgcc, which will be statically linked.
-#        add_link_options(--rtlib=compiler-rt)
-#
-#        # Include the path to LLVM's libc++abi.a
-#        execute_process(
-#            COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libc++abi.a
-#            OUTPUT_VARIABLE GF_LAYERS_TEMP_CPP_ABI_PATH
-#        )
-#        string(REGEX REPLACE "\n" "" GF_LAYERS_TEMP_CPP_ABI_PATH ${GF_LAYERS_TEMP_CPP_ABI_PATH})
-#
-#        add_link_options(${GF_LAYERS_TEMP_CPP_ABI_PATH})
-#
-#        # Include the path to LLVM's libunwind.a
-#        execute_process(
-#            COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libunwind.a
-#            OUTPUT_VARIABLE GF_LAYERS_TEMP_UNWIND_PATH
-#        )
-#        string(REGEX REPLACE "\n" "" GF_LAYERS_TEMP_UNWIND_PATH ${GF_LAYERS_TEMP_UNWIND_PATH})
-#
-#        add_link_options(${GF_LAYERS_TEMP_UNWIND_PATH})
+        # Use LLVM's libc++ instead of GCC's libstdc++.
+        add_compile_options(-stdlib=libc++)
+        # Enable link time optimization; object files will be LLVM bitcode files.
+        add_compile_options(-flto)
+
+        # Link options:
+        # Use LLVM's libc++ instead of GCC's libstdc++.
+        add_link_options(-stdlib=libc++)
+        # Use LLVM's lld as the linker.
+        add_link_options(-fuse-ld=lld)
+        # Statically link the C++ library (which is not GCC's libstdc++ because of the -stdlib flag above).
+        add_link_options(-static-libstdc++)
+        # Use LLVM's compiler-rt instead of libgcc, which will be statically linked.
+        add_link_options(--rtlib=compiler-rt)
+
+        # Include the path to LLVM's libc++abi.a
+        execute_process(
+            COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libc++abi.a
+            OUTPUT_VARIABLE GF_LAYERS_TEMP_CPP_ABI_PATH
+        )
+        string(REGEX REPLACE "\n" "" GF_LAYERS_TEMP_CPP_ABI_PATH ${GF_LAYERS_TEMP_CPP_ABI_PATH})
+
+        add_link_options(${GF_LAYERS_TEMP_CPP_ABI_PATH})
+
+        # Include the path to LLVM's libunwind.a
+        execute_process(
+            COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libunwind.a
+            OUTPUT_VARIABLE GF_LAYERS_TEMP_UNWIND_PATH
+        )
+        string(REGEX REPLACE "\n" "" GF_LAYERS_TEMP_UNWIND_PATH ${GF_LAYERS_TEMP_UNWIND_PATH})
+
+        add_link_options(${GF_LAYERS_TEMP_UNWIND_PATH})
     endif()
 
 
@@ -106,7 +114,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
                         # Disable warnings
                         /WX  # warnings as errors
                         /wd4068  # warning C4068: unknown pragma
-                        /wdC4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
+                        /wd4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
                         /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
                 )
             endif()

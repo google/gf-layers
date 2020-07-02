@@ -77,10 +77,10 @@ def generate_manifests(layer_dir: Path, layer_properties: LayerProperties, check
                     layer_properties.description = re.search(r'"([^"]*)"', line).group(1)
 
     # Write out the manifest file for each platform.
-    for platform in ["unix", "mac", "windows"]:
+    for platform in ["unix", "darwin", "windows"]:
         if platform == "unix":
             library_path = f"./lib{not_none(layer_properties.layer_name)}.so"
-        elif platform == "mac":
+        elif platform == "darwin":
             library_path = f"./lib{not_none(layer_properties.layer_name)}.dylib"
         elif platform == "windows":
             # JSON output is similar to: ".\\aaa.dll"

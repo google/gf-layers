@@ -28,15 +28,11 @@ for CONFIG in Debug Release; do
     cmake \
       -G Ninja \
       ../.. \
-      "-DCMAKE_BUILD_TYPE=${CONFIG}" \
-      "-DCMAKE_EXPORT_COMPILE_COMMANDS=1" \
-      "-DGF_LAYERS_WARNINGS_AS_ERRORS=1"
+      "-DCMAKE_BUILD_TYPE=${CONFIG}"
 
     cmake --build . --config "${CONFIG}"
 
-    check_clang_tidy.sh compile_commands.json
-    check_cppcheck.sh compile_commands.json
-    check_iwyu.sh compile_commands.json
+    check_compile_commands.sh compile_commands.json
 
   popd
 done
@@ -50,17 +46,13 @@ for CONFIG in Debug Release; do
       -G Ninja \
       ../.. \
       "-DCMAKE_BUILD_TYPE=${CONFIG}" \
-      "-DCMAKE_EXPORT_COMPILE_COMMANDS=1" \
-      "-DGF_LAYERS_WARNINGS_AS_ERRORS=1" \
       "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
       "-DANDROID_ABI=arm64-v8a" \
       "-DANDROID_NATIVE_API_LEVEL=24"
 
     cmake --build . --config "${CONFIG}"
 
-    check_clang_tidy.sh compile_commands.json
-    check_cppcheck.sh compile_commands.json
-    check_iwyu.sh compile_commands.json
+    check_compile_commands.sh compile_commands.json
 
   popd
 done

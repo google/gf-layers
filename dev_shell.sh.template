@@ -26,8 +26,11 @@ test -f ./src/iwyu.imp
 GF_LAYERS_REPO_ROOT="$(pwd)"
 export GF_LAYERS_REPO_ROOT
 
-export CC=clang-10
-export CXX=clang++-10
+# If GF_LAYERS_SKIP_COMPILER_SET is unset:
+if test -z ${GF_LAYERS_SKIP_COMPILER_SET+x}; then
+  export CC=clang-10
+  export CXX=clang++-10
+fi
 
 cd temp/
 
@@ -111,20 +114,25 @@ fi
 
 # Get Android NDK.
 
-ANDROID_NDK_FILENAME="android-ndk-r21-linux-x86_64.zip"
-ANDROID_NDK_OUT="android-ndk-r21"
 
-if test ! -f "${ANDROID_NDK_OUT}.touch"; then
-  curl -sSLo "${ANDROID_NDK_FILENAME}" "https://dl.google.com/android/repository/${ANDROID_NDK_FILENAME}"
-  unzip -q "${ANDROID_NDK_FILENAME}"
-  rm "${ANDROID_NDK_FILENAME}"
-  test -d "${ANDROID_NDK_OUT}"
-  touch "${ANDROID_NDK_OUT}.touch"
+# If GF_LAYERS_SKIP_ANDROID_NDK is unset:
+if test -z ${GF_LAYERS_SKIP_ANDROID_NDK+x}; then
+
+  ANDROID_NDK_FILENAME="android-ndk-r21-linux-x86_64.zip"
+  ANDROID_NDK_OUT="android-ndk-r21"
+
+  if test ! -f "${ANDROID_NDK_OUT}.touch"; then
+    curl -sSLo "${ANDROID_NDK_FILENAME}" "https://dl.google.com/android/repository/${ANDROID_NDK_FILENAME}"
+    unzip -q "${ANDROID_NDK_FILENAME}"
+    rm "${ANDROID_NDK_FILENAME}"
+    test -d "${ANDROID_NDK_OUT}"
+    touch "${ANDROID_NDK_OUT}.touch"
+  fi
+
+  ANDROID_NDK_ROOT="$(pwd)/${ANDROID_NDK_OUT}"
+  export ANDROID_NDK_ROOT
+
 fi
-
-ANDROID_NDK_ROOT="$(pwd)/${ANDROID_NDK_OUT}"
-export ANDROID_NDK_ROOT
-
 
 cd "${GF_LAYERS_REPO_ROOT}"
 

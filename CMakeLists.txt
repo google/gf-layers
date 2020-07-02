@@ -121,6 +121,8 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
                         /wd4626  # assignment operator was implicitly defined as deleted
                         /wd5027  # move assignment operator was implicitly defined as deleted
                         /wd4514  # warning C4514: 'x': unreferenced inline function has been removed
+                        /wd4711  # warning C4711: function 'x' selected for automatic inline expansion (informational)
+                        /wd4710  # warning C4710: 'x': function not inlined (informational)
                 )
             endif()
         else()

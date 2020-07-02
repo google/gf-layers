@@ -23,5 +23,5 @@ fprintf
 dispatchable
 cppcheck
 cpplint
-
+inlined
 

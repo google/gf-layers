@@ -77,10 +77,10 @@ def generate_manifests(layer_dir: Path, layer_properties: LayerProperties, check
                     layer_properties.description = re.search(r'"([^"]*)"', line).group(1)
 
     # Write out the manifest file for each platform.
-    for platform in ["unix", "mac", "windows"]:
+    for platform in ["unix", "darwin", "windows"]:
         if platform == "unix":
             library_path = f"./lib{not_none(layer_properties.layer_name)}.so"
-        elif platform == "mac":
+        elif platform == "darwin":
             library_path = f"./lib{not_none(layer_properties.layer_name)}.dylib"
         elif platform == "windows":
             # JSON output is similar to: ".\\aaa.dll"
@@ -178,7 +178,7 @@ def generate_linker_scripts(layer_dir: Path, layer_name: str, check_only: bool) 
     exports_contents = "# Linker script for Apple.\n"
     exports_contents += f"# Generated file; do not edit.\n"
     for function in non_android_exported_functions:
-        exports_contents += f"{function}\n"
+        exports_contents += f"_{function}\n"
     if check_only:
         if not exports_path.is_file() or exports_path.read_text(encoding="utf-8", errors="ignore") != exports_contents:
             log("Error: file needs to be re-generated")

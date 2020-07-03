@@ -19,8 +19,16 @@ project(gf-layers
     DESCRIPTION "Vulkan layers"
     LANGUAGES CXX)
 
-# Enables warnings as errors, but only if gf-layers is the root project.
-option(GF_LAYERS_WARNINGS_AS_ERRORS ON)
+option(
+        GF_LAYERS_WARNINGS_AS_ERRORS
+        "Enables warnings as errors for gf-layers targets, but only if gf-layers is the root project."
+        ON)
+
+option(
+        GF_LAYERS_USE_LLVM_LIBCPP
+        "Use LLVM's libc++ when using Clang, plus various other LLVM options, but only if gf-layers is the root project."
+        OFF)
+
 
 ##
 ## Function: gf_layers_add_common(target)
@@ -44,7 +52,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
     # If using Clang then use LLVM's libc++ and various other options.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL Clang AND NOT ANDROID)
+    if(GF_LAYERS_USE_LLVM_LIBCPP AND CMAKE_CXX_COMPILER_ID STREQUAL Clang AND NOT ANDROID)
 
         # TODO(paulthomson): We may want to build a custom version of Clang instead of messing with its options.
 
@@ -95,8 +103,27 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
             target_compile_options(${target} PRIVATE /Wall)
 
             # Warnings as errors.
-            if(${GF_LAYERS_WARNINGS_AS_ERRORS})
-                target_compile_options(${target} PRIVATE /WX)
+            if(GF_LAYERS_WARNINGS_AS_ERRORS)
+                target_compile_options(
+                        ${target}
+                        PRIVATE
+                        # Treat angle bracket headers as external headers.
+                        #/external:anglebrackets
+                        # Disable warnings from external headers.
+                        #/external:W0
+                        # Disable warnings
+                        /WX  # warnings as errors
+                        /wd4068  # warning C4068: unknown pragma
+                        /wd4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
+                        /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
+                        /wd4625  # copy constructor was implicitly defined as deleted
+                        /wd5026  # move constructor was implicitly defined as deleted
+                        /wd4626  # assignment operator was implicitly defined as deleted
+                        /wd5027  # move assignment operator was implicitly defined as deleted
+                        /wd4514  # warning C4514: 'x': unreferenced inline function has been removed
+                        /wd4711  # warning C4711: function 'x' selected for automatic inline expansion (informational)
+                        /wd4710  # warning C4710: 'x': function not inlined (informational)
+                )
             endif()
         else()
 
@@ -116,7 +143,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
             endif()
 
             # Warnings as errors.
-            if(${GF_LAYERS_WARNINGS_AS_ERRORS})
+            if(GF_LAYERS_WARNINGS_AS_ERRORS)
                 target_compile_options(${target} PRIVATE -Werror)
             endif()
 

@@ -21,3 +21,7 @@ nonliteral
 logcat
 fprintf
 dispatchable
+cppcheck
+cpplint
+inlined
+

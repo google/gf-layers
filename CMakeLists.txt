@@ -151,7 +151,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     endfunction()
 endif()
 
-# Layer manifest files (VK_LAYER_GF_foo_plat.json) have the |plat| suffix as
+# Layer manifest files (VkLayer_GF_foo_plat.json) have the |plat| suffix as
 # windows, darwin, or linux. Here, we decide which suffix value to use. We will
 # later copy the corresponding manifest file alongside the layer library.
 if(WIN32)
@@ -306,8 +306,8 @@ endfunction()
 
 
 ##
-## Target: VK_LAYER_GF_frame_counter
+## Target: VkLayer_GF_frame_counter
 ##
 ## A Vulkan layer for counting frames per second.
 ##
-gf_layers_add_vulkan_layer(VK_LAYER_GF_frame_counter)
+gf_layers_add_vulkan_layer(VkLayer_GF_frame_counter)

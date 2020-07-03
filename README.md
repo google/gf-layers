@@ -6,7 +6,7 @@ that can be built for Linux, Mac, Windows, and Android.
 
 This repository is a work-in-progress.
 
-* WIP: VK_LAYER_GF_frame_counter: counts the frames per second.
+* WIP: VkLayer_GF_frame_counter: counts the frames per second.
 
 This is not an officially supported Google product.
 
@@ -40,7 +40,7 @@ For example:
 
 ```sh
 export VK_LAYER_PATH=/path/to/gf-layers/build
-export VK_INSTANCE_LAYERS=VK_LAYER_GF_frame_counter
+export VK_INSTANCE_LAYERS=VkLayer_GF_frame_counter
 ./vulkan_app
 ```
 

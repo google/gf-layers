@@ -35,7 +35,7 @@ void log(const char* format_string, ...) {
 
 #if defined(__ANDROID__)
   // NOLINTNEXTLINE
-  __android_log_vprint(ANDROID_LOG_DEBUG, "VK_LAYER_GF", format_string, vargs);
+  __android_log_vprint(ANDROID_LOG_DEBUG, "VkLayer_GF", format_string, vargs);
 #else
   // NOLINTNEXTLINE
   std::vfprintf(stderr, format_string, vargs);

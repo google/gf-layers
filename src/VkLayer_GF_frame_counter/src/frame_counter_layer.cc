@@ -61,7 +61,7 @@ GlobalData* get_global_data() {
 }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
-    "VK_LAYER_GF_frame_counter",    // layerName
+    "VkLayer_GF_frame_counter",     // layerName
     VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
     1,                              // implementationVersion
     "Frame counter layer.",         // description
@@ -372,11 +372,11 @@ extern "C" {
 #pragma ide diagnostic ignored "UnusedGlobalDeclarationInspection"
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
-VK_LAYER_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
+VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
     VkNegotiateLayerInterface* pVersionStruct) {
   DEBUG_LOG(
       "Entry point: "
-      "VK_LAYER_GF_frame_counterNegotiateLoaderLayerInterfaceVersion");
+      "VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion");
 
   DEBUG_ASSERT(pVersionStruct);
   DEBUG_ASSERT(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
@@ -397,16 +397,16 @@ VK_LAYER_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-VK_LAYER_GF_frame_counterGetInstanceProcAddr(VkInstance instance,
-                                             const char* pName) {
-  DEBUG_LOG("Entry point: VK_LAYER_GF_frame_counterGetInstanceProcAddr");
+VkLayer_GF_frame_counterGetInstanceProcAddr(VkInstance instance,
+                                            const char* pName) {
+  DEBUG_LOG("Entry point: VkLayer_GF_frame_counterGetInstanceProcAddr");
 
   return gf_layers::frame_counter_layer::vkGetInstanceProcAddr(instance, pName);
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-VK_LAYER_GF_frame_counterGetDeviceProcAddr(VkDevice device, const char* pName) {
-  DEBUG_LOG("Entry point: VK_LAYER_GF_frame_counterGetDeviceProcAddr");
+VkLayer_GF_frame_counterGetDeviceProcAddr(VkDevice device, const char* pName) {
+  DEBUG_LOG("Entry point: VkLayer_GF_frame_counterGetDeviceProcAddr");
 
   return gf_layers::frame_counter_layer::vkGetDeviceProcAddr(device, pName);
 }

@@ -18,8 +18,6 @@ set -x
 set -e
 set -u
 
-# Old bash versions can't expand empty arrays, so we always include at least this option.
-CMAKE_OPTIONS=("-DCMAKE_OSX_ARCHITECTURES=x86_64")
 
 help | head
 
@@ -44,7 +42,6 @@ case "$(uname)" in
 
 "MINGW"*|"MSYS_NT"*)
   NINJA_OS="win"
-  CMAKE_OPTIONS+=("-DCMAKE_C_COMPILER=cl.exe" "-DCMAKE_CXX_COMPILER=cl.exe")
   ;;
 
 *)

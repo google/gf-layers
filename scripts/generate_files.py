@@ -25,11 +25,11 @@ from typing import List, Any
 
 doc = """
 Generates the layer manifest JSON files and linker scripts from the C++ source
-code in each VK_LAYER_* directory.
+code in each VkLayer_* directory.
 
 The C++ files must include commented layer properties like this:
 
-    "VK_LAYER_GF_frame_counter",    // layerName
+    "VkLayer_GF_frame_counter",     // layerName
     VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
     1,                              // implementationVersion
     "Frame counter layer.",         // description
@@ -37,7 +37,7 @@ The C++ files must include commented layer properties like this:
 And exports like this:
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
-VK_LAYER_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
+VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
 
 """
 
@@ -254,7 +254,7 @@ def main(args) -> None:
 
     os.chdir(os.environ["GF_LAYERS_REPO_ROOT"])
 
-    layer_dirs = [d for d in Path().glob("src/VK_LAYER_*/") if d.is_dir()]
+    layer_dirs = [d for d in Path().glob("src/VkLayer_*/") if d.is_dir()]
 
     result = True
 

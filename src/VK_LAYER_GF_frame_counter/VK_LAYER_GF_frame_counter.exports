@@ -1,5 +1,0 @@
-# Linker script for Apple.
-# Generated file; do not edit.
-_VK_LAYER_GF_frame_counterNegotiateLoaderLayerInterfaceVersion
-_VK_LAYER_GF_frame_counterGetInstanceProcAddr
-_VK_LAYER_GF_frame_counterGetDeviceProcAddr

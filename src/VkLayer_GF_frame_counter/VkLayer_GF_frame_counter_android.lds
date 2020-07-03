@@ -2,9 +2,9 @@
 # Generated file; do not edit.
 {
 global:
-    VK_LAYER_GF_frame_counterNegotiateLoaderLayerInterfaceVersion;
-    VK_LAYER_GF_frame_counterGetInstanceProcAddr;
-    VK_LAYER_GF_frame_counterGetDeviceProcAddr;
+    VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion;
+    VkLayer_GF_frame_counterGetInstanceProcAddr;
+    VkLayer_GF_frame_counterGetDeviceProcAddr;
     # Introspection functions must be exported on Android.
     vkEnumerateInstanceLayerProperties;
     vkEnumerateDeviceLayerProperties;

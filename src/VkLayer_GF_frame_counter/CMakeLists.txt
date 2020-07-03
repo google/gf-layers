@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set(VK_LAYER_GF_frame_counter_SOURCES
+set(VkLayer_GF_frame_counter_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/frame_counter_layer.cc
     PARENT_SCOPE
 )

@@ -16,24 +16,47 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 #include "gf_layers_layer_util/logging.h"
+#include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
 
 namespace gf_layers::frame_counter_layer {
 
 struct InstanceData {
   VkInstance instance;
+
+  // Most layers must store this. Required to implement vkGetInstanceProcAddr.
+  // Should not be used otherwise; all required instance function pointers
+  // should be obtained during vkCreateInstance.
   PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
+
+  // Most layers must store this. Required to implement
+  // vkEnumerateDeviceExtensionProperties.
   PFN_vkEnumerateDeviceExtensionProperties vkEnumerateDeviceExtensionProperties;
+
+  // Other instance functions: (none)
 };
 
 struct DeviceData {
   VkDevice device;
   InstanceData* instance_data;
+
+  // Most layers must store this. Required to implement vkGetDeviceProcAddr.
+  // Should not be used otherwise; all required device function pointers
+  // should be obtained during vkCreateDevice.
   PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
+
+  // Other device functions:
+
+  PFN_vkQueuePresentKHR vkQueuePresentKHR;
 };
 
 using InstanceMap = gf_layers::ProtectedTinyStaleMap<void*, InstanceData>;
@@ -41,24 +64,44 @@ using DeviceMap = gf_layers::ProtectedTinyStaleMap<void*, DeviceData>;
 
 namespace {
 
+// Read-only once initialized.
+struct FrameCounterLayerSettings {
+  bool init = false;
+  uint64_t start_frame = 0;
+  uint64_t end_frame = 0;
+  std::string output_file;
+};
+
 struct GlobalData {
   InstanceMap instance_map;
   DeviceMap device_map;
+  std::atomic<uint64_t> frame_counter{};
+
+  gf_layers::MutexType start_time_mutex;
+  std::chrono::steady_clock::time_point start_time;
+
+  // In vkCreateInstance, we initialize |settings| by reading environment
+  // variables while holding |settings_mutex|, after which |settings| is
+  // read-only. Thus, in instance or device functions (such as
+  // vkQueuePresentKHR) we can read |settings| without holding |settings_mutex|.
+  gf_layers::MutexType settings_mutex;
+  FrameCounterLayerSettings settings;
 };
 
-GlobalData* get_global_data() {
-  //
-  // The global data will get destructed at exit.
-  //
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wexit-time-destructors"
+#pragma clang diagnostic ignored "-Wglobal-constructors"
 
-  static GlobalData global_data;
+// TODO(paulthomson): The GlobalData is almost "constinit", but we would need to
+//  adjust our map data structures.
 
+// Global variables (that are not constinit) are strongly discouraged.
+// However, we should be fine as long as all global data is stored in this
+// struct.
+GlobalData global_data_;  // NOLINT(cert-err58-cpp)
 #pragma clang diagnostic pop
 
-  return &global_data;
-}
+GlobalData* get_global_data() { return &global_data_; }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "VkLayer_GF_frame_counter",     // layerName
@@ -72,11 +115,108 @@ bool is_this_layer(const char* pLayerName) {
           strcmp(pLayerName, kLayerProperties[0].layerName) == 0);
 }
 
-//
-// The introspection functions
-// vkEnumerate{Instance,Device}{Layer,Extension}Properties.
-//
+void init_settings_if_needed() {
+  gf_layers::ScopedLock lock(get_global_data()->settings_mutex);
 
+  FrameCounterLayerSettings& settings = get_global_data()->settings;
+
+  if (!settings.init) {
+    get_setting_uint64("VkLayer_GF_frame_counter_START_FRAME",
+                       "debug.gf.fc.start_frame", &settings.start_frame);
+    get_setting_uint64("VkLayer_GF_frame_counter_END_FRAME",
+                       "debug.gf.fc.end_frame", &settings.end_frame);
+    get_setting_string("VkLayer_GF_frame_counter_OUTPUT_FILE",
+                       "debug.gf.fc.output_file", &settings.output_file);
+    settings.init = true;
+  }
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
+  GlobalData* global_data = get_global_data();
+  DeviceData* device_data = global_data->device_map.get(device_key(queue));
+
+  // Call the original function.
+  VkResult result = device_data->vkQueuePresentKHR(queue, pPresentInfo);
+
+  // If the function succeeded:
+  if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+    // If the start and end frame are the same then there is nothing we can do.
+    // Return early.
+    if (global_data->settings.start_frame == global_data->settings.end_frame) {
+      return result;
+    }
+
+    // Atomically increment our frame counter.
+    uint64_t current_frame = global_data->frame_counter++;
+
+    // If we have hit the start frame...
+    if (current_frame == global_data->settings.start_frame) {
+      // Start the timer.
+      auto start_time = std::chrono::steady_clock::now();
+      // Although unlikely, another thread might be calling vkQueuePresentKHR
+      // (targeting a different VkQueue) so that the "else if" block below for
+      // the end_frame might be executing concurrently. Hence, we use a mutex.
+      {
+        ScopedLock lock(global_data->start_time_mutex);
+        global_data->start_time = start_time;
+      }
+    } else if (current_frame == global_data->settings.end_frame) {
+      // We have hit the end frame.
+      // Calculate the duration.
+      auto end_time = std::chrono::steady_clock::now();
+      std::chrono::steady_clock::time_point start_time;
+      {
+        ScopedLock lock(global_data->start_time_mutex);
+        start_time = global_data->start_time;
+      }
+
+      auto duration = end_time - start_time;
+
+      if (start_time == std::chrono::steady_clock::time_point{}) {
+        // Start time was not initialized; this is unlikely but could happen via
+        // concurrent calls to vkQueuePresentKHR.
+        // Set duration to 0.
+        duration = std::chrono::steady_clock::duration{};
+      }
+
+      // And write out the information to the output file.
+      {
+        // Write to a string stream first so we can log the information on
+        // failure.
+        std::ostringstream ss;
+        ss << "Start frame: " << global_data->settings.start_frame << std::endl;
+        ss << "End frame: " << global_data->settings.end_frame << std::endl;
+        ss << "Frame count: "
+           << (global_data->settings.end_frame -
+               global_data->settings.start_frame)
+           << std::endl;
+        ss << "Duration: " << std::chrono::nanoseconds(duration).count() << "ns"
+           << std::endl;
+
+        // Write to the file.
+        std::ofstream output_file_stream(global_data->settings.output_file);
+        output_file_stream << ss.str() << std::flush;
+        output_file_stream.close();
+
+        // Log on failure.
+        if (output_file_stream.fail()) {
+          LOG("Failed to write the duration info to file %s. The information "
+              "was: %s",
+              global_data->settings.output_file.c_str(), ss.str().c_str());
+        }
+      }
+    }
+  }
+  return result;
+}
+
+// The following functions are standard Vulkan functions that most Vulkan layers
+// must implement.
+
+//
+// Our vkEnumerateInstanceLayerProperties function.
+//
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
     uint32_t* pPropertyCount, VkLayerProperties* pProperties) {
   DEBUG_LOG("vkEnumerateInstanceLayerProperties");
@@ -98,6 +238,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
   return VK_SUCCESS;
 }
 
+//
+// Our vkEnumerateDeviceLayerProperties function.
+//
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
     VkPhysicalDevice /*physicalDevice*/, uint32_t* pPropertyCount,
     VkLayerProperties* pProperties) {
@@ -108,6 +251,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
   return vkEnumerateInstanceLayerProperties(pPropertyCount, pProperties);
 }
 
+//
+// Our vkEnumerateInstanceExtensionProperties function.
+//
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
     const char* pLayerName, uint32_t* pPropertyCount,
     VkExtensionProperties* /*pProperties*/) {
@@ -120,6 +266,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
   return VK_SUCCESS;
 }
 
+//
+// Our vkEnumerateDeviceExtensionProperties function.
+//
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     VkPhysicalDevice physicalDevice, const char* pLayerName,
     uint32_t* pPropertyCount, VkExtensionProperties* pProperties) {
@@ -140,13 +289,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
 }
 
 //
-// The vkCreate{Device,Instance} functions.
+// Our vkCreateInstance function.
 //
-
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     const VkInstanceCreateInfo* pCreateInfo,
     const VkAllocationCallbacks* pAllocator, VkInstance* pInstance) {
   DEBUG_LOG("vkCreateInstance");
+
+  init_settings_if_needed();
 
   // Get the layer instance create info, which we need so we can:
   // (a) obtain the next GetInstanceProcAddr function and;
@@ -199,7 +349,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   HANDLE(vkEnumerateDeviceExtensionProperties)
 #undef HANDLE
 
-  // TODO(paulthomson): Remove this test.
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
@@ -208,6 +357,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   return result;
 }
 
+//
+// Our vkCreateDevice function.
+//
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo,
     const VkAllocationCallbacks* pAllocator, VkDevice* pDevice) {
@@ -264,6 +416,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   DeviceData device_data{};
   device_data.device = *pDevice;
+  device_data.instance_data = instance_data;
 
 #define HANDLE(func)                                  \
   device_data.func = reinterpret_cast<PFN_##func>(    \
@@ -273,9 +426,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   }
 
   HANDLE(vkGetDeviceProcAddr)
+  HANDLE(vkQueuePresentKHR)
+
 #undef HANDLE
 
-  // TODO(paulthomson): Remove this test.
   DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
 
   get_global_data()->device_map.put(device_key(*pDevice), device_data);
@@ -284,9 +438,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 }
 
 //
-// The vkGet{Device,Instance}ProcAddr functions.
+// Our vkGetDeviceProcAddr function.
 //
-
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   DEBUG_ASSERT(pName);
@@ -297,9 +450,13 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
     return reinterpret_cast<PFN_vkVoidFunction>(func); \
   }
 
-  HANDLE(vkGetDeviceProcAddr)
+  // The device functions provided by this layer:
 
-  // TODO(paulthomson): Intercept Present.
+  // Standard device functions that most layers must implement:
+  HANDLE(vkGetDeviceProcAddr)  // Self-reference.
+
+  // Other device functions that this layer intercepts:
+  HANDLE(vkQueuePresentKHR)
 
 #undef HANDLE
 
@@ -316,6 +473,9 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
       ->vkGetDeviceProcAddr(device, pName);
 }
 
+//
+// Our vkGetInstanceProcAddr function.
+//
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   DEBUG_ASSERT(pName);
@@ -327,17 +487,21 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
     return reinterpret_cast<PFN_vkVoidFunction>(func); \
   }
 
+  // The global and instance functions provided by this layer:
+
   // The standard introspection functions.
   HANDLE(vkEnumerateInstanceLayerProperties)
   HANDLE(vkEnumerateDeviceLayerProperties)
   HANDLE(vkEnumerateInstanceExtensionProperties)
   HANDLE(vkEnumerateDeviceExtensionProperties)
 
+  // Standard functions that most layers must implement:
   HANDLE(vkCreateInstance)
   HANDLE(vkCreateDevice)
-
   HANDLE(vkGetInstanceProcAddr)  // Self-reference.
   HANDLE(vkGetDeviceProcAddr)
+
+  // Other instance functions that this layer intercepts: (none)
 
 #undef HANDLE
 

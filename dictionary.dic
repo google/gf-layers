@@ -13,6 +13,7 @@ dirnames
 iwyu
 noparent
 Wexit
+Wglobal
 paulthomson
 Wmissing
 VKAPI
@@ -24,4 +25,5 @@ dispatchable
 cppcheck
 cpplint
 inlined
+constinit
 

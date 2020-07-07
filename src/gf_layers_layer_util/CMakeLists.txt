@@ -16,6 +16,7 @@ set(gf_layers_layer_util_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/include/gf_layers_layer_util/logging.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/gf_layers_layer_util/util.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/logging.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/settings.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/util.cc
     PARENT_SCOPE
 )

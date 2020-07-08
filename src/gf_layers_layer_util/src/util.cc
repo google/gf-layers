@@ -28,6 +28,8 @@ void* instance_key(VkPhysicalDevice handle) {
 
 void* device_key(VkDevice handle) { return *reinterpret_cast<void**>(handle); }
 
+void* device_key(VkQueue handle) { return *reinterpret_cast<void**>(handle); }
+
 VkLayerInstanceCreateInfo* get_layer_instance_create_info(
     const VkInstanceCreateInfo* pCreateInfo) {
   // pCreateInfo->pNext is a linked list of unknown struct types, discriminated

@@ -12,6 +12,10 @@ Checks: >
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -hicpp-no-array-decay,
   -fuchsia-default-arguments-calls,
+  -fuchsia-statically-constructed-objects,
+  -mpi-*,
+
+# Some comments for the above:
 
 # Allow array (with a length) to decay to a pointer.
 # We will already be warned against using arrays, so decay will
@@ -19,6 +23,8 @@ Checks: >
 # -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
 # -hicpp-no-array-decay,
 
+# We don't use MPI and some mpi-* checks appear to cause clang-tidy segfaults.
+# -mpi-*,
 
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'

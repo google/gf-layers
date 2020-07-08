@@ -48,11 +48,6 @@ class ProtectedTinyStaleMap {
   using InternalMapType = MapTemplate<KeyType, ValueType>;
   using ThreadLocalCacheType = std::pair<KeyType, ValueType*>;
 
-  ThreadLocalCacheType& get_thread_local_cache() {
-    static thread_local ThreadLocalCacheType thread_local_cache;
-    return thread_local_cache;
-  }
-
   ValueType* get(KeyType key) {
     // If we allowed removal from the map then this method could return stale
     // values due to its thread-local cache. E.g. if one thread removed an entry
@@ -82,7 +77,12 @@ class ProtectedTinyStaleMap {
 
     // Otherwise, lock and lookup.
     ScopedLock lock(mutex_);
-    ValueType* result = &map_[key];
+
+    ValueType* result = nullptr;
+    auto it = map_.find(key);
+    if (it != map_.end()) {
+      result = &it->second;
+    }
 
     // Update cache.
     thread_local_cache.first = key;
@@ -97,6 +97,11 @@ class ProtectedTinyStaleMap {
   }
 
  private:
+  ThreadLocalCacheType& get_thread_local_cache() {
+    static thread_local ThreadLocalCacheType thread_local_cache;
+    return thread_local_cache;
+  }
+
   InternalMapType map_;
   MutexType mutex_;
 };
@@ -111,7 +116,12 @@ class ProtectedMap {
 
   ValueType* get(KeyType key) {
     ScopedLock lock(mutex_);
-    return &map_[key];
+    ValueType* result = nullptr;
+    auto it = map_.find(key);
+    if (it != map_.end()) {
+      result = &it->second;
+    }
+    return result;
   }
 
   bool put(KeyType key, ValueType value) {
@@ -156,6 +166,10 @@ void* instance_key(VkPhysicalDevice handle);
 
 // Returns the VkDevice dispatch table pointer for |handle|.
 void* device_key(VkDevice handle);
+
+// Returns the VkQueue dispatch table pointer (same dispatch table as its
+// VkDevice) for |handle|.
+void* device_key(VkQueue handle);
 
 // Returns the VkLayerInstanceCreateInfo from the |pCreateInfo| given in a call
 // to vkCreateInstance. The VkLayerInstanceCreateInfo is needed to (a) obtain

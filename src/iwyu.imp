@@ -18,7 +18,9 @@
   { include: ["<vulkan/vk_platform.h>", "private", "<vulkan/vulkan.h>", "public"] },
   { include: ["\"vulkan/vk_platform.h\"", "private", "<vulkan/vulkan.h>", "public"] },
 
-  # libc++ <string>.
+  # libc++.
+  { symbol:  ["std::ofstream", "private", "<fstream>", "public"] },
+  { symbol:  ["std::ostringstream", "private", "<sstream>", "public"] },
   { symbol:  ["std::string", "private", "<string>", "public"] },
 
   # Android <mutex>.

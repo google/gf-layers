@@ -28,12 +28,12 @@ uname
 case "$(uname)" in
 "Linux")
   NINJA_OS="linux"
+
   df -h
-  sudo swapoff -a
-  sudo rm -f /swapfile
   sudo apt clean
   # shellcheck disable=SC2046
-  docker rmi $(docker image ls -aq)
+  docker rmi -f $(docker image ls -aq)
+  sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache/boost /opt/ghc
   df -h
 
   # Provided by build.yml.

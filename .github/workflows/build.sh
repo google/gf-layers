@@ -25,10 +25,34 @@ help | head
 
 uname
 
+
+cd /
+sudo du -h . -d 4
+
+sleep 5
+df -h
+sleep 2
+sudo swapoff -a
+sleep 2
+sudo rm -f /swapfile
+sleep 2
+df -h
+sleep 2
+sudo apt clean
+sleep 2
+df -h
+sleep 2
+# shellcheck disable=SC2046
+docker rmi $(docker image ls -aq)
+sleep 2
+df -h
+
+exit
+
+
 case "$(uname)" in
 "Linux")
   NINJA_OS="linux"
-  df -h
   sudo swapoff -a
   sudo rm -f /swapfile
   sudo apt clean

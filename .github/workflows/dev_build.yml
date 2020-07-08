@@ -16,7 +16,7 @@
 on:
   pull_request:
     branches:
-      - master
+      - aaa
 
 jobs:
   build:

@@ -156,7 +156,7 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
       auto start_time = std::chrono::steady_clock::now();
       // Although unlikely, another thread might be calling vkQueuePresentKHR
       // (targeting a different VkQueue) so that the "else if" block below for
-      // the end_frame might be executing concurrently. Hence, we use a mutex.
+      // the end_frame is executing concurrently. Hence, we use a mutex.
       {
         ScopedLock lock(global_data->start_time_mutex);
         global_data->start_time = start_time;
@@ -180,7 +180,7 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
         duration = std::chrono::steady_clock::duration{};
       }
 
-      // And write out the information to the output file.
+      // Write out the information to the output file.
       {
         // Write to a string stream first so we can log the information on
         // failure.

@@ -27,7 +27,6 @@ uname
 
 
 cd /
-sudo du -h . -d 4
 
 sleep 5
 df -h

@@ -1,0 +1,5 @@
+# Linker script for Apple.
+# Generated file; do not edit.
+_VkLayer_GF_amber_scoopNegotiateLoaderLayerInterfaceVersion
+_VkLayer_GF_amber_scoopGetInstanceProcAddr
+_VkLayer_GF_amber_scoopGetDeviceProcAddr

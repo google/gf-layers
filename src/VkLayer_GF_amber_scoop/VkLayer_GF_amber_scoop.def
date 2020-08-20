@@ -1,0 +1,7 @@
+; Linker script for MSVC.
+; Generated file; do not edit.
+LIBRARY VkLayer_GF_amber_scoop
+EXPORTS
+    VkLayer_GF_amber_scoopNegotiateLoaderLayerInterfaceVersion
+    VkLayer_GF_amber_scoopGetInstanceProcAddr
+    VkLayer_GF_amber_scoopGetDeviceProcAddr

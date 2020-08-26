@@ -312,3 +312,10 @@ endfunction()
 ## A Vulkan layer for counting frames per second.
 ##
 gf_layers_add_vulkan_layer(VkLayer_GF_frame_counter)
+
+##
+## Target: VkLayer_GF_amber_scoop
+##
+## A Vulkan layer for creating amber files from draw calls.
+##
+gf_layers_add_vulkan_layer(VkLayer_GF_amber_scoop)

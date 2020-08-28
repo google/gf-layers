@@ -20,14 +20,42 @@ project(gf-layers
     LANGUAGES CXX)
 
 option(
-        GF_LAYERS_WARNINGS_AS_ERRORS
-        "Enables warnings as errors for gf-layers targets, but only if gf-layers is the root project."
-        ON)
+    GF_LAYERS_WARNINGS_AS_ERRORS
+    "Enables warnings as errors for gf-layers targets, but only if gf-layers is the root project."
+    ON)
 
 option(
-        GF_LAYERS_USE_LLVM_LIBCPP
-        "Use LLVM's libc++ when using Clang, plus various other LLVM options, but only if gf-layers is the root project."
-        OFF)
+    GF_LAYERS_USE_LLVM_LIBCPP
+    "Use LLVM's libc++ when using Clang, plus various other LLVM options, but only if gf-layers is the root project."
+    OFF)
+
+set(
+    GF_LAYERS_VULKAN_HEADERS_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers/include
+    CACHE
+    PATH
+    "Path to an include directory containing vulkan/vulkan.h, vulkan/vk_layer.h, etc.")
+
+set(
+    GF_LAYERS_SPIRV_HEADERS_REPO_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SPIRV-Headers
+    CACHE
+    PATH
+    "Path to a https://github.com/KhronosGroup/SPIRV-Headers repo.")
+
+set(
+    GF_LAYERS_SPIRV_TOOLS_REPO_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SPIRV-Tools
+    CACHE
+    PATH
+    "Path to a https://github.com/KhronosGroup/SPIRV-Tools repo.")
+
+set(
+    GF_LAYERS_PROTOBUF_REPO_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/protobuf
+    CACHE
+    PATH
+    "Path to a https://github.com/protocolbuffers/protobuf repo.")
 
 
 ##
@@ -45,7 +73,7 @@ endfunction()
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
     # Set some global compiler flags.
-    set(CMAKE_CXX_STANDARD 20)
+    set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -105,25 +133,25 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
             # Warnings as errors.
             if(GF_LAYERS_WARNINGS_AS_ERRORS)
                 target_compile_options(
-                        ${target}
-                        PRIVATE
-                        # Treat angle bracket headers as external headers.
-                        #/external:anglebrackets
-                        # Disable warnings from external headers.
-                        #/external:W0
-                        # Disable warnings
-                        /WX  # warnings as errors
-                        /wd4068  # warning C4068: unknown pragma
-                        /wd4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
-                        /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
-                        /wd4625  # copy constructor was implicitly defined as deleted
-                        /wd5026  # move constructor was implicitly defined as deleted
-                        /wd4626  # assignment operator was implicitly defined as deleted
-                        /wd5027  # move assignment operator was implicitly defined as deleted
-                        /wd4514  # warning C4514: 'x': unreferenced inline function has been removed
-                        /wd4711  # warning C4711: function 'x' selected for automatic inline expansion (informational)
-                        /wd4710  # warning C4710: 'x': function not inlined (informational)
-                        /wd4996  # warning C4996: 'getenv': This function or variable may be unsafe.
+                    ${target}
+                    PRIVATE
+                    # Treat angle bracket headers as external headers.
+                    #/external:anglebrackets
+                    # Disable warnings from external headers.
+                    #/external:W0
+                    # Disable warnings
+                    /WX  # warnings as errors
+                    /wd4068  # warning C4068: unknown pragma
+                    /wd4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
+                    /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
+                    /wd4625  # copy constructor was implicitly defined as deleted
+                    /wd5026  # move constructor was implicitly defined as deleted
+                    /wd4626  # assignment operator was implicitly defined as deleted
+                    /wd5027  # move assignment operator was implicitly defined as deleted
+                    /wd4514  # warning C4514: 'x': unreferenced inline function has been removed
+                    /wd4711  # warning C4711: function 'x' selected for automatic inline expansion (informational)
+                    /wd4710  # warning C4710: 'x': function not inlined (informational)
+                    /wd4996  # warning C4996: 'getenv': This function or variable may be unsafe.
                 )
             endif()
         else()
@@ -134,13 +162,13 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
             # -Weverything: Clang only.
             if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
                 target_compile_options(
-                        ${target}
-                        PRIVATE
-                        -Wno-unknown-warning-option
-                        -Wno-c++98-compat
-                        -Wno-c++98-compat-pedantic
-                        -Wno-padded
-                        -Weverything)
+                    ${target}
+                    PRIVATE
+                    -Wno-unknown-warning-option
+                    -Wno-c++98-compat
+                    -Wno-c++98-compat-pedantic
+                    -Wno-padded
+                    -Weverything)
             endif()
 
             # Warnings as errors.
@@ -163,6 +191,7 @@ else()
     set(GF_LAYERS_MANIFEST_SYSTEM_SUFFIX "unix")
 endif()
 
+
 ##
 ## Target: gf_layers_vulkan_headers
 ##
@@ -174,41 +203,69 @@ endif()
 ## - we want the latest headers plus vulkan/vk_layer.h, which is not present in
 ##   the Android NDK.
 ##
-if(NOT TARGET gf_layers_vulkan_headers)
-    add_library(gf_layers_vulkan_headers INTERFACE)
-    if(NOT DEFINED GF_LAYERS_VULKAN_HEADERS_REPO_DIR)
-        set(GF_LAYERS_VULKAN_HEADERS_REPO_DIR
-                ${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers)
-    endif()
-    if (IS_DIRECTORY ${GF_LAYERS_VULKAN_HEADERS_REPO_DIR})
-        # We have the Vulkan-Headers directory, so use that.
-        # We avoid using add_subdirectory() because we just need the headers.
-        target_include_directories(
-                gf_layers_vulkan_headers
-                SYSTEM
-                INTERFACE
-                ${GF_LAYERS_VULKAN_HEADERS_REPO_DIR}/include)
-    elseif(TARGET Vulkan::Headers)
-        # The Vulkan::Headers target already exists (we must be a subdirectory
-        # in a larger build), so we can use that.
-        get_target_property(
-                GF_LAYERS_TEMP_VULKAN_HEADERS
-                Vulkan::Headers
-                INTERFACE_INCLUDE_DIRECTORIES)
-
-        target_include_directories(
-                gf_layers_vulkan_headers
-                SYSTEM
-                INTERFACE
-                ${GF_LAYERS_TEMP_VULKAN_HEADERS})
-    else()
-        message(
-                FATAL_ERROR
-                "Could not find Vulkan headers. "
-                "Try fetching submodules or look at the "
-                "gf_layers_vulkan_headers target in CMakeLists.txt.")
-    endif()
+add_library(gf_layers_vulkan_headers INTERFACE)
+if(NOT IS_DIRECTORY ${GF_LAYERS_VULKAN_HEADERS_DIR})
+    message(
+        FATAL_ERROR
+        "Could not find Vulkan-Headers at ${GF_LAYERS_VULKAN_HEADERS_DIR}. "
+        "Try fetching submodules or set GF_LAYERS_VULKAN_HEADERS_DIR.")
 endif()
+# We avoid using add_subdirectory() because we just need the headers.
+target_include_directories(
+    gf_layers_vulkan_headers
+    SYSTEM
+    INTERFACE
+    ${GF_LAYERS_VULKAN_HEADERS_REPO_DIR}/include)
+
+
+##
+## Project: SPIRV-Tools.
+##
+if(NOT TARGET SPIRV-Tools-opt)
+    if(NOT IS_DIRECTORY ${GF_LAYERS_SPIRV_TOOLS_REPO_DIR})
+        message(
+            FATAL_ERROR
+            "Could not find SPIRV-Tools at ${GF_LAYERS_SPIRV_TOOLS_REPO_DIR}. "
+            "Try fetching submodules or set GF_LAYERS_SPIRV_TOOLS_REPO_DIR.")
+    endif()
+
+    add_subdirectory(${GF_LAYERS_SPIRV_TOOLS_REPO_DIR} EXCLUDE_FROM_ALL)
+endif()
+
+
+##
+## Target: gf_layers_spirv_fuzz
+##
+## Provides the spirv-fuzz library from SPIRV-Tools.
+##
+add_library(gf_layers_spirv_fuzz cmake/empty.cpp)
+target_link_libraries(gf_layers_spirv_fuzz PUBLIC SPIRV-Tools-fuzz)
+
+# We need to add the SPIRV-Tools root (source and binary directories) as
+# include paths, because we need to use internal headers from SPIRV-Tools.
+# We can get these directories from the SOURCE_DIR and BINARY_DIR target
+# properties.
+
+get_target_property(
+    GF_LAYERS_TEMP_SPIRV_FUZZ_SOURCE_DIR
+    SPIRV-Tools-fuzz
+    SOURCE_DIR)
+
+get_target_property(
+    GF_LAYERS_TEMP_SPIRV_FUZZ_BINARY_DIR
+    SPIRV-Tools-fuzz
+    BINARY_DIR)
+
+target_include_directories(
+    gf_layers_spirv_fuzz
+    PUBLIC
+
+    # The source directory is: /path/to/SPIRV-Tools/source/fuzz/
+    # Hence: ../..
+
+    ${GF_LAYERS_TEMP_SPIRV_FUZZ_SOURCE_DIR}/../..
+    ${GF_LAYERS_TEMP_SPIRV_FUZZ_BINARY_DIR}/../..)
+
 
 
 ##
@@ -216,7 +273,7 @@ endif()
 ##
 ## Utility containers and functions.
 ##
-add_subdirectory(src/gf_layers_layer_util)  # Provides gf_layers_layer_util_SOURCES.
+add_subdirectory(src/gf_layers_layer_util EXCLUDE_FROM_ALL)  # Provides gf_layers_layer_util_SOURCES.
 add_library(gf_layers_layer_util STATIC ${gf_layers_layer_util_SOURCES})
 gf_layers_add_common(gf_layers_layer_util)
 target_include_directories(gf_layers_layer_util PUBLIC src/gf_layers_layer_util/include)
@@ -237,8 +294,10 @@ endif()
 
 
 ##
-## Function:
+## Function: gf_layers_hide_exports(target, source_dir)
 ##
+## Hides all functions in |target| except for those we explicitly want to
+## export. Uses various linker scripts that must be present in |source_dir|.
 ##
 function(gf_layers_hide_exports target source_dir)
     if(MSVC)
@@ -267,7 +326,7 @@ endfunction()
 ##
 ## Function: gf_layers_add_vulkan_layer(name)
 ##
-## Adds a shared library target (Vulkan layer) called |name|.
+## Adds a shared library target Vulkan layer called |name|.
 ## Calls add_subdirectory("src/${name}/CMakeLists.txt"), which must provide a
 ## variable "name_SOURCES" containing the source files.
 ##
@@ -281,7 +340,7 @@ function(gf_layers_add_vulkan_layer name)
             PRIVATE
             gf_layers_vulkan_headers
             gf_layers_layer_util)
-    target_compile_features(${name} PUBLIC cxx_std_20)
+    target_compile_features(${name} PUBLIC cxx_std_17)
     # We do not want Vulkan function prototypes, as layers must not call any
     # Vulkan functions directly.
     target_compile_definitions(${name} PRIVATE VK_NO_PROTOTYPES)
@@ -297,8 +356,9 @@ function(gf_layers_add_vulkan_layer name)
                 $<TARGET_FILE_DIR:${name}>)
     # Support installing the layer target.
     install(TARGETS ${name} LIBRARY DESTINATION lib)
-    # TODO(paulthomson): There might be a better way doing this so that the .json file always ends up alongside the
-    #  library without needing to specify "lib".
+    # TODO(paulthomson): There might be a better way of doing this so that the
+    #  .json file always ends up alongside the library without needing to
+    #  specify "lib".
     install(
             FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/${name}/${name}_${GF_LAYERS_MANIFEST_SYSTEM_SUFFIX}.json
             DESTINATION lib)
@@ -312,3 +372,11 @@ endfunction()
 ## A Vulkan layer for counting frames per second.
 ##
 gf_layers_add_vulkan_layer(VkLayer_GF_frame_counter)
+
+##
+## Target: VkLayer_GF_shader_fuzzer
+##
+## A Vulkan layer for fuzzing SPIR-V shaders using spirv-fuzz.
+##
+gf_layers_add_vulkan_layer(VkLayer_GF_shader_fuzzer)
+target_link_libraries(VkLayer_GF_shader_fuzzer PRIVATE gf_layers_spirv_fuzz)

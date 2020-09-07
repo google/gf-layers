@@ -21,6 +21,7 @@
   # libc++.
   { symbol:  ["std::ofstream", "private", "<fstream>", "public"] },
   { symbol:  ["std::ostringstream", "private", "<sstream>", "public"] },
+  { symbol:  ["std::move", "private", "<utility>", "public"] },
   { symbol:  ["std::string", "private", "<string>", "public"] },
   { symbol:  ["std::stringstream", "private", "<sstream>", "public"] },
 

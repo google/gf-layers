@@ -18,6 +18,7 @@
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -114,6 +115,11 @@ class ProtectedMap {
   using InternalMapType = MapTemplate<KeyType, ValueType>;
   using ThreadLocalCacheType = std::pair<KeyType, ValueType*>;
 
+  size_t count(KeyType key) {
+    ScopedLock lock(mutex_);
+    return map_.count(key);
+  }
+
   ValueType* get(KeyType key) {
     ScopedLock lock(mutex_);
     ValueType* result = nullptr;
@@ -170,6 +176,10 @@ void* device_key(VkDevice handle);
 // Returns the VkQueue dispatch table pointer (same dispatch table as its
 // VkDevice) for |handle|.
 void* device_key(VkQueue handle);
+
+// Returns the VkCommandBuffer dispatch table pointer (same dispatch table as
+// its VkDevice) for |handle|.
+void* device_key(VkCommandBuffer handle);
 
 // Returns the VkLayerInstanceCreateInfo from the |pCreateInfo| given in a call
 // to vkCreateInstance. The VkLayerInstanceCreateInfo is needed to (a) obtain

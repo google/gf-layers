@@ -16,13 +16,21 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
+#include <memory>
+#include <sstream>
 #include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
+#include "vk_layer_amber_scoop/vulkan_commands.h"
 
 namespace gf_layers::amber_scoop_layer {
 
@@ -42,17 +50,28 @@ struct InstanceData {
 };
 
 struct DeviceData {
-  VkDevice device;
-  InstanceData* instance_data;
+  VkDevice device = {};
+  InstanceData* instance_data = {};
 
   // Most layers must store this. Required to implement vkGetDeviceProcAddr.
   // Should not be used otherwise; all required device function pointers
   // should be obtained during vkCreateDevice.
-  PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
+  PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr = {};
 
   // Other device functions:
 
-  PFN_vkQueueSubmit vkQueueSubmit;
+  PFN_vkQueueSubmit vkQueueSubmit = {};
+  PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass = {};
+  PFN_vkCmdDraw vkCmdDraw = {};
+  PFN_vkCmdDrawIndexed vkCmdDrawIndexed = {};
+  PFN_vkCmdBindPipeline vkCmdBindPipeline = {};
+
+  // Tracked device data:
+
+  std::shared_ptr<
+      ProtectedMap<VkCommandBuffer, std::vector<std::shared_ptr<Cmd>>>>
+      command_buffers = std::make_shared<
+          ProtectedMap<VkCommandBuffer, std::vector<std::shared_ptr<Cmd>>>>();
 };
 
 using InstanceMap = gf_layers::ProtectedTinyStaleMap<void*, InstanceData>;
@@ -64,13 +83,15 @@ namespace {
 struct AmberScoopLayerSettings {
   bool init = false;
   uint64_t start_draw_call = 0;
-  uint64_t draw_call_count = 0;
-  std::string output_file_prefix;
+  uint64_t draw_call_count = 1;
+  uint64_t last_draw_call = 0;
+  std::string output_file_prefix = "amber_scoop_output";
 };
 
 struct GlobalData {
   InstanceMap instance_map;
   DeviceMap device_map;
+  std::atomic<uint64_t> current_draw_call = {};
 
   // In vkCreateInstance, we initialize |settings| by reading environment
   // variables while holding |settings_mutex|, after which |settings| is
@@ -78,6 +99,20 @@ struct GlobalData {
   // vkQueuePresentKHR) we can read |settings| without holding |settings_mutex|.
   gf_layers::MutexType settings_mutex;
   AmberScoopLayerSettings settings;
+};
+
+// Draw call state tracker is used to store the state of a draw call while
+// parsing the command buffers in vkQueueSubmit(...) -function.
+struct DrawCallStateTracker {
+  VkPipeline graphics_pipeline = nullptr;
+  VkRenderPassBeginInfo* current_render_pass = nullptr;
+  uint32_t current_subpass = 0;
+  VkCommandBuffer command_buffer_handle;
+  VkQueue queue;
+  std::vector<uint8_t> push_constant_data;
+
+  std::unordered_map<uint32_t, VkBuffer> bound_vertex_buffers;
+  std::unordered_map<uint32_t, VkDeviceSize> vertex_buffer_offsets;
 };
 
 #pragma clang diagnostic push
@@ -93,7 +128,7 @@ struct GlobalData {
 GlobalData global_data_;  // NOLINT(cert-err58-cpp)
 #pragma clang diagnostic pop
 
-GlobalData* get_global_data() { return &global_data_; }
+GlobalData* GetGlobalData() { return &global_data_; }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "VkLayer_GF_amber_scoop",       // layerName
@@ -102,15 +137,15 @@ const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "Amber scoop layer.",           // description
 }}};
 
-bool is_this_layer(const char* pLayerName) {
+bool IsThisLayer(const char* pLayerName) {
   return ((pLayerName != nullptr) &&
           strcmp(pLayerName, kLayerProperties[0].layerName) == 0);
 }
 
-void init_settings_if_needed() {
-  gf_layers::ScopedLock lock(get_global_data()->settings_mutex);
+void InitSettingsIfNeeded() {
+  gf_layers::ScopedLock lock(GetGlobalData()->settings_mutex);
 
-  AmberScoopLayerSettings& settings = get_global_data()->settings;
+  AmberScoopLayerSettings& settings = GetGlobalData()->settings;
 
   if (!settings.init) {
     get_setting_uint64("VkLayer_GF_amber_scoop_START_DRAW_CALL",
@@ -122,21 +157,245 @@ void init_settings_if_needed() {
     get_setting_string("VkLayer_GF_amber_scoop_OUTPUT_FILE_PREFIX",
                        "debug.gf.as.output_file_prefix",
                        &settings.output_file_prefix);
+    settings.last_draw_call =
+        settings.start_draw_call + settings.draw_call_count;
     settings.init = true;
   }
 }
 
 //
+// Adds the given vulkan command buffer command to the list of tracked commands.
+// Creates a new list of commands for the given command buffer if it doesn't
+// already exist. Tracked commands will be parsed later when the command buffer
+// is submitted via vkQueueSubmit function.
+//
+void AddCommand(const DeviceData& device_data, VkCommandBuffer command_buffer,
+                std::unique_ptr<Cmd> command) {
+  // Check if the command list already exists.
+  if (device_data.command_buffers->count(command_buffer) == 0) {
+    std::vector<std::shared_ptr<Cmd>> empty_cmds;
+    device_data.command_buffers->put(command_buffer, std::move(empty_cmds));
+  }
+  device_data.command_buffers->get(command_buffer)
+      ->push_back(std::move(command));
+}
+
+// This function handles all of the draw calls. An Amber file will be generated
+// from the draw call if the draw call is set to be captured via settings.
+//
+// TODO(ilkkasaa): This function is going to be huge. Consider making a separate
+// file for handling draw calls / creating amber files.
+void HandleDrawCall(const DrawCallStateTracker& draw_call_state_tracker,
+                    const DeviceData& device_data, uint32_t first_index,
+                    uint32_t index_count, uint32_t first_vertex,
+                    uint32_t vertex_count, uint32_t first_instance,
+                    uint32_t instance_count) {
+  // Silence unused parameter warnings.
+  // TODO(ilkkasaa) remove these.
+  (void)device_data;
+  (void)first_vertex;
+  (void)vertex_count;
+
+  // Graphics pipeline must be bound.
+  DEBUG_ASSERT(draw_call_state_tracker.graphics_pipeline);
+  DEBUG_ASSERT(draw_call_state_tracker.current_render_pass);
+
+  auto* global_data = GetGlobalData();
+
+  const uint64_t current_draw_call = global_data->current_draw_call;
+  // Return if current draw call should not be captured.
+  if (current_draw_call < global_data->settings.start_draw_call ||
+      current_draw_call > global_data->settings.last_draw_call) {
+    global_data->current_draw_call++;
+    return;
+  }
+  global_data->current_draw_call++;
+
+  // Initialize string streams for different parts of the amber file.
+  std::ostringstream buffer_declaration_str;
+  // TODO(ilkkasaa): add other string streams
+
+  buffer_declaration_str << "BUFFER ...";
+
+  std::string amber_file_name =
+      global_data->settings.output_file_prefix + ".amber";
+
+  std::ofstream amber_file;
+  amber_file.open(amber_file_name, std::ios::trunc | std::ios::out);
+
+  amber_file << "#!amber" << std::endl << std::endl;
+
+  amber_file << "SHADER vertex vertex_shader SPIRV-ASM" << std::endl;
+  // TODO(ilkkasaa): add vertex shader spirv here
+  amber_file << "TODO" << std::endl;
+  amber_file << "END" << std::endl << std::endl;
+
+  amber_file << "SHADER fragment fragment_shader SPIRV-ASM" << std::endl;
+  // TODO(ilkkasaa): add fragment shader spirv here
+  amber_file << "TODO" << std::endl;
+  amber_file << "END" << std::endl << std::endl;
+
+  // Pipeline
+  amber_file << "PIPELINE graphics pipeline" << std::endl;
+  amber_file << "  ATTACH vertex_shader";
+  amber_file << std::endl;
+  amber_file << "  ATTACH fragment_shader";
+  // TODO(ilkkasaa): add other pipeline contents here
+  amber_file << "END" << std::endl << std::endl;  // PIPELINE
+
+  // TODO(ilkkasaa): get primitive topology from VkGraphicsPipelineCreateInfo
+  const std::string topology = "TODO";
+
+  if (index_count > 0) {
+    amber_file << "RUN pipeline DRAW_ARRAY AS " << topology
+               << " INDEXED START_IDX " << first_index << " COUNT "
+               << index_count;
+  } else {
+    amber_file << "RUN pipeline DRAW_ARRAY AS " << topology;
+  }
+  if (instance_count > 0) {
+    amber_file << " START_INSTANCE " << first_instance << " INSTANCE_COUNT "
+               << instance_count;
+  }
+  amber_file << std::endl;
+}
+
+// Intercepted "vkCmd..." functions.
+
+//
+// Our vkCmdBeginRenderPass function.
+//
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
+    VkCommandBuffer commandBuffer,
+    const VkRenderPassBeginInfo* pRenderPassBegin, VkSubpassContents contents) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.get(device_key(commandBuffer));
+
+  // Call the original function.
+  device_data->vkCmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
+
+  AddCommand(*device_data, commandBuffer,
+             std::make_unique<CmdBeginRenderPass>(pRenderPassBegin, contents));
+}
+
+//
+// Our vkCmdBindPipeline function.
+//
+VKAPI_ATTR void VKAPI_CALL
+vkCmdBindPipeline(VkCommandBuffer commandBuffer,
+                  VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.get(device_key(commandBuffer));
+
+  device_data->vkCmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
+
+  AddCommand(*device_data, commandBuffer,
+             std::make_unique<CmdBindPipeline>(pipelineBindPoint, pipeline));
+}
+
+//
+// Our vkCmdDraw function.
+//
+VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer,
+                                     uint32_t vertexCount,
+                                     uint32_t instanceCount,
+                                     uint32_t firstVertex,
+                                     uint32_t firstInstance) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.get(device_key(commandBuffer));
+
+  // Call the original function.
+  device_data->vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex,
+                         firstInstance);
+
+  AddCommand(*device_data, commandBuffer,
+             std::make_unique<CmdDraw>(vertexCount, instanceCount, firstVertex,
+                                       firstInstance));
+}
+
+//
+// Our vkCmdDrawIndexed function.
+//
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
+    VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount,
+    uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.get(device_key(commandBuffer));
+
+  // Call the original function.
+  device_data->vkCmdDrawIndexed(commandBuffer, indexCount, instanceCount,
+                                firstIndex, vertexOffset, firstInstance);
+
+  AddCommand(
+      *device_data, commandBuffer,
+      std::make_unique<CmdDrawIndexed>(indexCount, instanceCount, firstIndex,
+                                       vertexOffset, firstInstance));
+}
+
+// Other intercepted vulkan functions.
+
+//
 // Our vkQueueSubmit function.
+// Goes through all tracked commands in all of the submitted command buffers.
 //
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
                                              uint32_t submitCount,
                                              VkSubmitInfo const* pSubmits,
                                              VkFence fence) {
-  GlobalData* global_data = get_global_data();
+  GlobalData* global_data = GetGlobalData();
   DeviceData* device_data = global_data->device_map.get(device_key(queue));
 
-  // TODO(ilkkas) handle queue submits here.
+  for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
+    for (uint32_t cmd_buffer_idx = 0;
+         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+         cmd_buffer_idx < pSubmits[submit_idx].commandBufferCount;
+         cmd_buffer_idx++) {
+      auto* command_buffer_handle =
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          pSubmits[submit_idx].pCommandBuffers[cmd_buffer_idx];
+
+      // Ignore command buffers that are not tracked, i.e. command buffers that
+      // doesn't contain any interesting commands.
+      if (device_data->command_buffers->count(command_buffer_handle) == 0) {
+        continue;
+      }
+      DEBUG_ASSERT(device_data->command_buffers->count(command_buffer_handle));
+
+      DrawCallStateTracker draw_call_state = {};
+      draw_call_state.queue = queue;
+      draw_call_state.command_buffer_handle = command_buffer_handle;
+
+      auto* command_buffer =
+          device_data->command_buffers->get(command_buffer_handle);
+      for (auto& cmd : *command_buffer) {
+        if (auto* cmd_begin_renderpass = cmd->AsBeginRenderPass()) {
+          draw_call_state.current_render_pass =
+              &cmd_begin_renderpass->render_pass_begin_;
+          draw_call_state.current_subpass = 0;
+        } else if (auto* cmd_draw = cmd->AsDraw()) {
+          HandleDrawCall(draw_call_state, *device_data, 0, 0,
+                         cmd_draw->first_vertex_, cmd_draw->vertex_count_,
+                         cmd_draw->first_instance_, cmd_draw->instance_count_);
+        } else if (auto* cmd_draw_indexed = cmd->AsDrawIndexed()) {
+          HandleDrawCall(draw_call_state, *device_data,
+                         cmd_draw_indexed->first_index_,
+                         cmd_draw_indexed->index_count_, 0, 0,
+                         cmd_draw_indexed->first_index_,
+                         cmd_draw_indexed->instance_count_);
+        } else if (auto* cmdBindPipeline = cmd->AsBindPipeline()) {
+          // Currently we are interested in graphics pipelines only.
+          if (cmdBindPipeline->pipeline_bind_point_ ==
+              VK_PIPELINE_BIND_POINT_GRAPHICS) {
+            draw_call_state.graphics_pipeline = cmdBindPipeline->pipeline_;
+          }
+        }
+      }
+    }
+  }
 
   // Call the original function.
   VkResult result =
@@ -193,7 +452,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
     VkExtensionProperties* /*pProperties*/) {
   DEBUG_LOG("vkEnumerateInstanceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     return VK_ERROR_LAYER_NOT_PRESENT;
   }
   *pPropertyCount = 0;
@@ -208,11 +467,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     uint32_t* pPropertyCount, VkExtensionProperties* pProperties) {
   DEBUG_LOG("vkEnumerateDeviceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     DEBUG_ASSERT(physicalDevice);
 
     InstanceData* instance_data =
-        get_global_data()->instance_map.get(instance_key(physicalDevice));
+        GetGlobalData()->instance_map.get(instance_key(physicalDevice));
 
     return instance_data->vkEnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
@@ -230,7 +489,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     const VkAllocationCallbacks* pAllocator, VkInstance* pInstance) {
   DEBUG_LOG("vkCreateInstance");
 
-  init_settings_if_needed();
+  InitSettingsIfNeeded();
 
   // Get the layer instance create info, which we need so we can:
   // (a) obtain the next GetInstanceProcAddr function and;
@@ -286,7 +545,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
-  get_global_data()->instance_map.put(instance_key(*pInstance), instance_data);
+  GetGlobalData()->instance_map.put(instance_key(*pInstance), instance_data);
 
   return result;
 }
@@ -322,7 +581,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // we can pass the correct VkInstance.
 
   InstanceData* instance_data =
-      get_global_data()->instance_map.get(instance_key(physicalDevice));
+      GetGlobalData()->instance_map.get(instance_key(physicalDevice));
 
   // Use next_get_instance_proc_address to get vkCreateDevice.
   auto vkCreateDevice =
@@ -361,12 +620,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   HANDLE(vkGetDeviceProcAddr)
   HANDLE(vkQueueSubmit)
+  HANDLE(vkCmdBeginRenderPass)
+  HANDLE(vkCmdBindPipeline)
+  HANDLE(vkCmdDraw)
+  HANDLE(vkCmdDrawIndexed)
 
 #undef HANDLE
 
   DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
 
-  get_global_data()->device_map.put(device_key(*pDevice), device_data);
+  GetGlobalData()->device_map.put(device_key(*pDevice), device_data);
 
   return result;
 }
@@ -391,7 +654,10 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
 
   // Other device functions that this layer intercepts:
   HANDLE(vkQueueSubmit)
-
+  HANDLE(vkCmdBeginRenderPass)
+  HANDLE(vkCmdBindPipeline)
+  HANDLE(vkCmdDraw)
+  HANDLE(vkCmdDrawIndexed)
 #undef HANDLE
 
   if (device == nullptr) {
@@ -402,7 +668,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // intercepting. We must have already intercepted the creation of the
   // device and so we have the appropriate function pointer for the next
   // vkGetDeviceProcAddr. We call the next layer in the chain.
-  return get_global_data()
+  return GetGlobalData()
       ->device_map.get(device_key(device))
       ->vkGetDeviceProcAddr(device, pName);
 }
@@ -451,7 +717,7 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   // intercepted the creation of the instance and so we have the function
   // pointer for the next vkGetInstanceProcAddr. We call the next layer in the
   // chain.
-  return get_global_data()
+  return GetGlobalData()
       ->instance_map.get(instance_key(instance))
       ->vkGetInstanceProcAddr(instance, pName);
 }

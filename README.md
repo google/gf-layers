@@ -19,6 +19,9 @@ git clone git@github.com:google/gf-layers.git
 # Or:
 git clone https://github.com/google/gf-layers.git
 
+# Navigate to the root of the repo.
+cd gf-layers
+
 # Update and init submodules.
 git submodule update --init
 

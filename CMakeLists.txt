@@ -215,7 +215,7 @@ target_include_directories(
     gf_layers_vulkan_headers
     SYSTEM
     INTERFACE
-    ${GF_LAYERS_VULKAN_HEADERS_REPO_DIR}/include)
+    ${GF_LAYERS_VULKAN_HEADERS_DIR})
 
 
 ##

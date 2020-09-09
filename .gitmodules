@@ -7,3 +7,6 @@
 [submodule "third_party/SPIRV-Headers"]
 	path = third_party/SPIRV-Headers
 	url = https://github.com/KhronosGroup/SPIRV-Headers.git
+[submodule "third_party/protobuf"]
+	path = third_party/protobuf
+	url = https://github.com/protocolbuffers/protobuf.git

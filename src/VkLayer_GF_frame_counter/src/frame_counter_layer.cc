@@ -533,7 +533,7 @@ extern "C" {
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
-#pragma ide diagnostic ignored "UnusedGlobalDeclarationInspection"
+#pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(

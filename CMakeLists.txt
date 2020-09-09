@@ -63,17 +63,17 @@ option(
 
 option(
     GF_LAYERS_WARNINGS_AS_ERRORS
-    "Enables warnings as errors for gf-layers targets."
+    "Enable warnings as errors for gf-layers targets."
     ${GF_LAYERS_PROJECT_IS_ROOT})
 
 option(
     GF_LAYERS_WARNINGS_EXTRA
-    "Enables extra warnings via compile flags for gf-layers targets."
+    "Enable extra warnings via compile flags for gf-layers targets."
     ${GF_LAYERS_PROJECT_IS_ROOT})
 
 option(
     GF_LAYERS_WARNING_SUPPRESSIONS
-    "Enables suppression of specific warnings for gf-layers targets."
+    "Enable suppression of specific warnings for gf-layers targets."
     ${GF_LAYERS_PROJECT_IS_ROOT})
 
 
@@ -173,7 +173,24 @@ target_include_directories(
 
 
 ##
-## Project: SPIRV-Tools.
+## Project: protobuf
+##
+## Provides targets: protobuf::protoc, protobuf::libprotobuf, and others.
+##
+if(NOT TARGET protobuf::protoc OR NOT TARGET protobuf::libprotobuf)
+    if(NOT IS_DIRECTORY ${GF_LAYERS_PROTOBUF_REPO_DIR})
+        message(
+            FATAL_ERROR
+            "Could not find protobuf at ${GF_LAYERS_PROTOBUF_REPO_DIR}. "
+            "Try fetching submodules or set GF_LAYERS_PROTOBUF_REPO_DIR.")
+    endif()
+    set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build tests")
+    set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "Build Shared Libraries")
+    add_subdirectory(${GF_LAYERS_PROTOBUF_REPO_DIR}/cmake EXCLUDE_FROM_ALL)
+endif()
+
+##
+## Project: SPIRV-Tools
 ##
 ## Provides targets: SPIRV-Tools-opt, SPIRV-Tools-fuzz, and others.
 ##
@@ -222,7 +239,7 @@ add_library(gf_layers_spirv_fuzz INTERFACE)
 
 # Targets that link gf_layers_spirv_fuzz should get SPIRV-Tools-fuzz.
 # The following command: target_link_libraries(gf_layers_spirv_fuzz PUBLIC SPIRV-Tools-fuzz)
-# is not supported by CMake for INTERFACE libraries. But we can achieve it manually:
+# is not supported by CMake for INTERFACE libraries, but we can achieve it manually:
 set_property(
     TARGET gf_layers_spirv_fuzz
     APPEND
@@ -233,10 +250,10 @@ set_property(
 # include paths, because we need to use internal headers from SPIRV-Tools.
 # CMake adds variables <PROJECT-NAME>_SOURCE_DIR and <PROJECT-NAME>_BINARY_DIR
 # when it sees the project(<PROJECT-NAME> ...) command, so we can use these.
-if(NOT SPIRV-Tools_SOURCE_DIR OR NOT SPIRV-Tools_BINARY_DIR)
+if(NOT spirv-tools_SOURCE_DIR OR NOT spirv-tools_BINARY_DIR)
     message(
         FATAL_ERROR
-        "Could not find CMake variables SPIRV-Tools_SOURCE_DIR and/or SPIRV-Tools_BINARY_DIR. "
+        "Could not find CMake variables spirv-tools_SOURCE_DIR and/or spirv-tools_BINARY_DIR. "
         "We require access to internal SPIRV-Tools headers, so the full source is required "
         "(as opposed to an \"installed\" version of SPIRV-Tools).")
 endif()

@@ -31,4 +31,9 @@ cppcheck \
   --inline-suppr \
   --suppress=unusedFunction \
   --suppress=missingIncludeSystem \
-  --suppress=unmatchedSuppression
+  --suppress=unmatchedSuppression \
+  --suppress='*':'*'third_party'*'
+
+
+# The --file-filter arg ensures we only check the source files we care about.
+# The --suppress=*:*third_party* arg ensures we suppress warnings from third_party headers.

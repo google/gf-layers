@@ -18,6 +18,8 @@ set -e
 set -u
 set -x
 
+cd "${GF_LAYERS_REPO_ROOT}"
+
 check_generated.sh
 check_headers.py
 check_format.sh

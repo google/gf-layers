@@ -27,7 +27,7 @@ Checks: >
 # -mpi-*,
 
 WarningsAsErrors: '*'
-HeaderFilterRegex: '.*'
+HeaderFilterRegex: '.*gf_layers.*|.*VkLayer_GF_.*'
 AnalyzeTemporaryDtors: false
 FormatStyle:     file
 ...

@@ -17,16 +17,46 @@
 
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
+
+// TODO(paulthomson): These are protobuf warning suppressions that could be
+//  moved upstream to SPIRV-Tools or fixed in protobuf.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
+#pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#pragma clang diagnostic ignored "-Winconsistent-missing-destructor-override"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+
+// TODO(paulthomson): SPIRV-Tools warning suppressions.
+#pragma clang diagnostic ignored "-Wnewline-eof"
+#pragma clang diagnostic ignored "-Wswitch-enum"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wweak-vtables"
+
+#include "google/protobuf/stubs/status.h"
+#include "google/protobuf/util/json_util.h"
+#include "source/fuzz/fuzzer.h"
+#include "source/fuzz/fuzzer_util.h"
+#include "source/fuzz/protobufs/spvtoolsfuzz.pb.h"
+#include "source/spirv_constant.h"
+#include "spirv-tools/libspirv.h"
+#include "spirv-tools/libspirv.hpp"
+#include "tools/io.h"
+
+#pragma clang diagnostic pop
 
 namespace gf_layers::shader_fuzzer_layer {
 
@@ -64,19 +94,30 @@ using DeviceMap = gf_layers::ProtectedTinyStaleMap<void*, DeviceData>;
 
 namespace {
 
+// The number of digits used in output filenames.
+// E.g. shader_00005_fuzzed.spv.
+//             ^ 5 digits
+const size_t kNumberPaddingInFilename = 6;
+
 // Read-only once initialized.
 struct ShaderFuzzerLayerSettings {
   bool init = false;
-  std::string output_prefix;
+
+  // The output file path prefix.
+  // E.g. output_prefix="/data/output/shader"
+  // Some files:
+  //   /data/output/shader_000001.spv
+  //   /data/output/shader_000002.spv
+  //   ...
+  std::string output_prefix = "shader";
 };
 
 struct GlobalData {
   InstanceMap instance_map;
   DeviceMap device_map;
-  std::atomic<uint64_t> frame_counter{};
 
-  gf_layers::MutexType start_time_mutex;
-  std::chrono::steady_clock::time_point start_time;
+  // Counter used to make unique output filenames.
+  std::atomic<uint64_t> shader_module_counter{};
 
   // In vkCreateInstance, we initialize |settings| by reading environment
   // variables while holding |settings_mutex|, after which |settings| is
@@ -123,6 +164,190 @@ void InitSettingsIfNeeded() {
                        "debug.gf.sf.output_prefix", &settings.output_prefix);
     settings.init = true;
   }
+}
+
+// Returns an empty vector if fuzzing was not possible.  Otherwise, returns a
+// vector representing the fuzzed version of the shader referred to by
+// |pCreateInfo->pCode|.
+std::vector<uint32_t> TryFuzzingShader(
+    VkShaderModuleCreateInfo const* pCreateInfo, GlobalData* global_data) {
+  // Grab a new suffix for this shader module.
+  uint64_t shader_module_number = global_data->shader_module_counter++;
+
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  uint32_t version_word = pCreateInfo->pCode[1];
+
+  // NOLINTNEXTLINE(hicpp-signed-bitwise)
+  uint8_t major_version = SPV_SPIRV_VERSION_MAJOR_PART(version_word);
+  // NOLINTNEXTLINE(hicpp-signed-bitwise)
+  uint8_t minor_version = SPV_SPIRV_VERSION_MINOR_PART(version_word);
+
+  if (major_version != 1) {
+    LOG("Unknown SPIR-V major version %u; shader %lu will not be fuzzed.",
+        major_version, shader_module_number);
+    return {};
+  }
+
+  spv_target_env target_env;  // NOLINT(cppcoreguidelines-init-variables)
+
+  switch (minor_version) {
+    case 0:
+      target_env = SPV_ENV_UNIVERSAL_1_0;
+      break;
+    case 1:
+      target_env = SPV_ENV_UNIVERSAL_1_1;
+      break;
+    case 2:
+      target_env = SPV_ENV_UNIVERSAL_1_2;
+      break;
+    case 3:
+      target_env = SPV_ENV_UNIVERSAL_1_3;
+      break;
+    case 4:
+      target_env = SPV_ENV_UNIVERSAL_1_4;
+      break;
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+    case 5:
+      target_env = SPV_ENV_UNIVERSAL_1_5;
+      break;
+    default:
+      LOG("Unknown SPIR-V minor version %u; shader %lu will not be fuzzed.",
+          minor_version, shader_module_number);
+      return std::vector<uint32_t>();
+  }
+
+  // |pCreateInfo->codeSize| gives the size in bytes; convert it to words.
+  const uint32_t code_size_in_words =
+      static_cast<uint32_t>(pCreateInfo->codeSize) / 4;
+
+  spvtools::SpirvTools tools(target_env);
+
+  if (!tools.IsValid()) {
+    LOG("Did not manage to create a SPIRV-Tools instance; shaders will not be "
+        "fuzzed.");
+    return {};
+  }
+
+  // Create a fuzzer and the various parameters required for fuzzing.
+  spvtools::ValidatorOptions validator_options;
+  spvtools::fuzz::Fuzzer fuzzer(target_env,
+                                static_cast<uint32_t>(shader_module_number),
+                                true, validator_options);
+  std::vector<uint32_t> binary_in(
+      pCreateInfo->pCode,
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      pCreateInfo->pCode + code_size_in_words);
+
+  std::vector<uint32_t> result;
+  spvtools::fuzz::protobufs::FactSequence no_facts;
+  std::vector<spvtools::fuzz::fuzzerutil::ModuleSupplier> no_donors;
+  spvtools::fuzz::protobufs::TransformationSequence transformation_sequence;
+
+  // Fuzz the shader into |result|.
+  auto fuzzer_result_status = fuzzer.Run(binary_in, no_facts, no_donors,
+                                         &result, &transformation_sequence);
+
+  if (fuzzer_result_status !=
+      spvtools::fuzz::Fuzzer::FuzzerResultStatus::kComplete) {
+    LOG("Fuzzing failed.");
+    return {};
+  }
+
+  // Get the shader module number as a string.
+  std::string shader_module_number_padded;
+  {
+    std::stringstream shader_module_number_stream;
+    shader_module_number_stream << std::setfill('0')
+                                << std::setw(kNumberPaddingInFilename)
+                                << shader_module_number;
+    shader_module_number_padded = shader_module_number_stream.str();
+  }
+
+  // Write out the original shader module.
+  {
+    std::stringstream original_shader_binary_name;
+    original_shader_binary_name << global_data->settings.output_prefix << "_"
+                                << shader_module_number_padded
+                                << "_original.spv";
+    WriteFile<uint32_t>(original_shader_binary_name.str().c_str(), "wb",
+                        pCreateInfo->pCode, code_size_in_words);
+  }
+
+  // Write out the fuzzed shader module
+  {
+    std::stringstream fuzzed_shader_binary_name;
+    fuzzed_shader_binary_name << global_data->settings.output_prefix << "_"
+                              << shader_module_number_padded << "_fuzzed.spv";
+    WriteFile<uint32_t>(fuzzed_shader_binary_name.str().c_str(), "wb",
+                        result.data(), result.size());
+  }
+
+  // Write out the transformations
+  {
+    std::stringstream transformations_name;
+    transformations_name << global_data->settings.output_prefix << "_"
+                         << shader_module_number_padded
+                         << "_fuzzed.transformations";
+    std::ofstream transformations_file(transformations_name.str(),
+                                       std::ios::out | std::ios::binary);
+    transformation_sequence.SerializeToOstream(&transformations_file);
+  }
+
+  // Write out the transformations in JSON format
+  {
+    std::stringstream transformations_json_name;
+    transformations_json_name << global_data->settings.output_prefix << "_"
+                              << shader_module_number_padded
+                              << "_fuzzed.transformations_json";
+
+    std::string json_string;
+    auto json_options = google::protobuf::util::JsonPrintOptions();
+    json_options.add_whitespace = true;
+
+    auto json_generation_status = google::protobuf::util::MessageToJsonString(
+        transformation_sequence, &json_string, json_options);
+
+    if (json_generation_status == google::protobuf::util::Status::OK) {
+      std::ofstream transformations_json_file(transformations_json_name.str());
+      transformations_json_file << json_string;
+    }
+  }
+
+  return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
+    VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule) {
+  GlobalData* global_data = GetGlobaData();
+  DeviceData* device_data = global_data->device_map.get(device_key(device));
+
+  // Fuzzing the provided shader will either yield an empty vector - if
+  // something went wrong - or a vector whose contents is the fuzzed shader
+  // binary.
+  std::vector<uint32_t> fuzzed = TryFuzzingShader(pCreateInfo, global_data);
+
+  // If we did not succeed in fuzzing the shader, just call the original
+  // function.
+  if (fuzzed.empty()) {
+    return device_data->vkCreateShaderModule(device, pCreateInfo, pAllocator,
+                                             pShaderModule);
+  }
+
+  // We succeeded in fuzzing the shader, so pass on a pointer to a new
+  // VkShaderModuleCreateInfo object identical to the original, except with
+  // the fuzzed shader data.
+  VkShaderModuleCreateInfo fuzzed_shader_module_create_info{
+      pCreateInfo->sType,  // sType
+      pCreateInfo->pNext,  // pNext
+      pCreateInfo->flags,  // flags
+      fuzzed.size() * 4,   // codeSize
+      fuzzed.data(),       // pCode
+  };
+
+  // Call the original function with our create info.
+  return device_data->vkCreateShaderModule(
+      device, &fuzzed_shader_module_create_info, pAllocator, pShaderModule);
 }
 
 // The following functions are standard Vulkan functions that most Vulkan layers
@@ -340,6 +565,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   }
 
   HANDLE(vkGetDeviceProcAddr)
+  HANDLE(vkCreateShaderModule)
 
 #undef HANDLE
 
@@ -367,6 +593,9 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
 
   // Standard device functions that most layers must implement:
   HANDLE(vkGetDeviceProcAddr)  // Self-reference.
+
+  // Other device functions that this layer intercepts:
+  HANDLE(vkCreateShaderModule)
 
 #undef HANDLE
 

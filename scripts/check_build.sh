@@ -38,6 +38,13 @@ for CONFIG in Debug Release; do
   popd
 done
 
+# When building for Android, we override the SPIRV_FUZZ_PROTOC_COMMAND.
+# This is used to generate some source files during the build.
+# It is the protobuf::protoc CMake target by default,
+# but we cannot run a protoc binary built for Android, so we must override it with
+# a suitable host binary.
+PROTOC_PATH="${GF_LAYERS_REPO_ROOT}/temp/build-Debug/third_party/protobuf/cmake/protoc"
+
 # Android builds.
 for CONFIG in Debug Release; do
   mkdir -p "build-android-${CONFIG}/"
@@ -49,7 +56,8 @@ for CONFIG in Debug Release; do
       "-DCMAKE_BUILD_TYPE=${CONFIG}" \
       "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
       "-DANDROID_ABI=arm64-v8a" \
-      "-DANDROID_NATIVE_API_LEVEL=24"
+      "-DANDROID_NATIVE_API_LEVEL=24" \
+      "-DSPIRV_FUZZ_PROTOC_COMMAND=${PROTOC_PATH}"
 
     cmake --build . --config "${CONFIG}"
 

@@ -86,6 +86,8 @@ if(GF_LAYERS_PROJECT_IS_ROOT)
 
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
     # GF_LAYERS_USE_LLVM_LIBCPP=ON means we will statically link (if using non-Android Clang):
     #  - libc++
     #  - compiler-rt
@@ -101,8 +103,6 @@ if(GF_LAYERS_PROJECT_IS_ROOT)
 
         # Use LLVM's libc++ instead of GCC's libstdc++.
         add_compile_options(-stdlib=libc++)
-        # Enable link time optimization; object files will be LLVM bitcode files.
-        add_compile_options(-flto)
 
         # Link options:
         # Use LLVM's libc++ instead of GCC's libstdc++.
@@ -186,6 +186,7 @@ if(NOT TARGET protobuf::protoc OR NOT TARGET protobuf::libprotobuf)
     endif()
     set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build tests")
     set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "Build Shared Libraries")
+    set(protobuf_WITH_ZLIB OFF CACHE BOOL "Build with zlib support")
     add_subdirectory(${GF_LAYERS_PROTOBUF_REPO_DIR}/cmake EXCLUDE_FROM_ALL)
 endif()
 
@@ -259,9 +260,9 @@ if(NOT spirv-tools_SOURCE_DIR OR NOT spirv-tools_BINARY_DIR)
 endif()
 target_include_directories(
     gf_layers_spirv_fuzz
-    PUBLIC
-    ${SPIRV-Tools_SOURCE_DIR}
-    ${SPIRV-Tools_BINARY_DIR})
+    INTERFACE
+    ${spirv-tools_SOURCE_DIR}
+    ${spirv-tools_BINARY_DIR})
 
 
 ##

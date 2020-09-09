@@ -28,7 +28,7 @@
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
 
-namespace gf_layers::frame_counter_layer {
+namespace gf_layers::shader_fuzzer_layer {
 
 struct InstanceData {
   VkInstance instance;
@@ -65,11 +65,9 @@ using DeviceMap = gf_layers::ProtectedTinyStaleMap<void*, DeviceData>;
 namespace {
 
 // Read-only once initialized.
-struct FrameCounterLayerSettings {
+struct ShaderFuzzerLayerSettings {
   bool init = false;
-  uint64_t start_frame = 0;
-  uint64_t end_frame = 0;
-  std::string output_file;
+  std::string output_prefix;
 };
 
 struct GlobalData {
@@ -85,7 +83,7 @@ struct GlobalData {
   // read-only. Thus, in instance or device functions (such as
   // vkQueuePresentKHR) we can read |settings| without holding |settings_mutex|.
   gf_layers::MutexType settings_mutex;
-  FrameCounterLayerSettings settings;
+  ShaderFuzzerLayerSettings settings;
 };
 
 #pragma clang diagnostic push
@@ -101,32 +99,28 @@ struct GlobalData {
 GlobalData global_data_;  // NOLINT(cert-err58-cpp)
 #pragma clang diagnostic pop
 
-GlobalData* get_global_data() { return &global_data_; }
+GlobalData* GetGlobaData() { return &global_data_; }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
-    "VkLayer_GF_frame_counter",     // layerName
+    "VkLayer_GF_shader_fuzzer",     // layerName
     VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
     1,                              // implementationVersion
     "Frame counter layer.",         // description
 }}};
 
-bool is_this_layer(const char* pLayerName) {
+bool IsThisLayer(const char* pLayerName) {
   return ((pLayerName != nullptr) &&
           strcmp(pLayerName, kLayerProperties[0].layerName) == 0);
 }
 
-void init_settings_if_needed() {
-  gf_layers::ScopedLock lock(get_global_data()->settings_mutex);
+void InitSettingsIfNeeded() {
+  gf_layers::ScopedLock lock(GetGlobaData()->settings_mutex);
 
-  FrameCounterLayerSettings& settings = get_global_data()->settings;
+  ShaderFuzzerLayerSettings& settings = GetGlobaData()->settings;
 
   if (!settings.init) {
-    get_setting_uint64("VkLayer_GF_frame_counter_START_FRAME",
-                       "debug.gf.fc.start_frame", &settings.start_frame);
-    get_setting_uint64("VkLayer_GF_frame_counter_END_FRAME",
-                       "debug.gf.fc.end_frame", &settings.end_frame);
-    get_setting_string("VkLayer_GF_frame_counter_OUTPUT_FILE",
-                       "debug.gf.fc.output_file", &settings.output_file);
+    get_setting_string("VkLayer_GF_shader_fuzzer_OUTPUT_PREFIX",
+                       "debug.gf.sf.output_prefix", &settings.output_prefix);
     settings.init = true;
   }
 }
@@ -179,7 +173,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
     VkExtensionProperties* /*pProperties*/) {
   DEBUG_LOG("vkEnumerateInstanceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     return VK_ERROR_LAYER_NOT_PRESENT;
   }
   *pPropertyCount = 0;
@@ -194,11 +188,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     uint32_t* pPropertyCount, VkExtensionProperties* pProperties) {
   DEBUG_LOG("vkEnumerateDeviceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     DEBUG_ASSERT(physicalDevice);
 
     InstanceData* instance_data =
-        get_global_data()->instance_map.get(instance_key(physicalDevice));
+        GetGlobaData()->instance_map.get(instance_key(physicalDevice));
 
     return instance_data->vkEnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
@@ -216,7 +210,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     const VkAllocationCallbacks* pAllocator, VkInstance* pInstance) {
   DEBUG_LOG("vkCreateInstance");
 
-  init_settings_if_needed();
+  InitSettingsIfNeeded();
 
   // Get the layer instance create info, which we need so we can:
   // (a) obtain the next GetInstanceProcAddr function and;
@@ -272,7 +266,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
-  get_global_data()->instance_map.put(instance_key(*pInstance), instance_data);
+  GetGlobaData()->instance_map.put(instance_key(*pInstance), instance_data);
 
   return result;
 }
@@ -308,7 +302,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // we can pass the correct VkInstance.
 
   InstanceData* instance_data =
-      get_global_data()->instance_map.get(instance_key(physicalDevice));
+      GetGlobaData()->instance_map.get(instance_key(physicalDevice));
 
   // Use next_get_instance_proc_address to get vkCreateDevice.
   auto vkCreateDevice =
@@ -351,7 +345,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
 
-  get_global_data()->device_map.put(device_key(*pDevice), device_data);
+  GetGlobaData()->device_map.put(device_key(*pDevice), device_data);
 
   return result;
 }
@@ -384,7 +378,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // intercepting. We must have already intercepted the creation of the
   // device and so we have the appropriate function pointer for the next
   // vkGetDeviceProcAddr. We call the next layer in the chain.
-  return get_global_data()
+  return GetGlobaData()
       ->device_map.get(device_key(device))
       ->vkGetDeviceProcAddr(device, pName);
 }
@@ -433,13 +427,13 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   // intercepted the creation of the instance and so we have the function
   // pointer for the next vkGetInstanceProcAddr. We call the next layer in the
   // chain.
-  return get_global_data()
+  return GetGlobaData()
       ->instance_map.get(instance_key(instance))
       ->vkGetInstanceProcAddr(instance, pName);
 }
 
 }  // namespace
-}  // namespace gf_layers::frame_counter_layer
+}  // namespace gf_layers::shader_fuzzer_layer
 
 //
 // Exported functions.
@@ -449,22 +443,22 @@ extern "C" {
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
-#pragma ide diagnostic ignored "UnusedGlobalDeclarationInspection"
+#pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
-VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
+VkLayer_GF_shader_fuzzerNegotiateLoaderLayerInterfaceVersion(
     VkNegotiateLayerInterface* pVersionStruct) {
   DEBUG_LOG(
       "Entry point: "
-      "VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion");
+      "VkLayer_GF_shader_fuzzerNegotiateLoaderLayerInterfaceVersion");
 
   DEBUG_ASSERT(pVersionStruct);
   DEBUG_ASSERT(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
 
   pVersionStruct->pfnGetInstanceProcAddr =
-      gf_layers::frame_counter_layer::vkGetInstanceProcAddr;
+      gf_layers::shader_fuzzer_layer::vkGetInstanceProcAddr;
   pVersionStruct->pfnGetDeviceProcAddr =
-      gf_layers::frame_counter_layer::vkGetDeviceProcAddr;
+      gf_layers::shader_fuzzer_layer::vkGetDeviceProcAddr;
   pVersionStruct->pfnGetPhysicalDeviceProcAddr = nullptr;
 
   if (pVersionStruct->loaderLayerInterfaceVersion >
@@ -477,18 +471,18 @@ VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-VkLayer_GF_frame_counterGetInstanceProcAddr(VkInstance instance,
+VkLayer_GF_shader_fuzzerGetInstanceProcAddr(VkInstance instance,
                                             const char* pName) {
-  DEBUG_LOG("Entry point: VkLayer_GF_frame_counterGetInstanceProcAddr");
+  DEBUG_LOG("Entry point: VkLayer_GF_shader_fuzzerGetInstanceProcAddr");
 
-  return gf_layers::frame_counter_layer::vkGetInstanceProcAddr(instance, pName);
+  return gf_layers::shader_fuzzer_layer::vkGetInstanceProcAddr(instance, pName);
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-VkLayer_GF_frame_counterGetDeviceProcAddr(VkDevice device, const char* pName) {
-  DEBUG_LOG("Entry point: VkLayer_GF_frame_counterGetDeviceProcAddr");
+VkLayer_GF_shader_fuzzerGetDeviceProcAddr(VkDevice device, const char* pName) {
+  DEBUG_LOG("Entry point: VkLayer_GF_shader_fuzzerGetDeviceProcAddr");
 
-  return gf_layers::frame_counter_layer::vkGetDeviceProcAddr(device, pName);
+  return gf_layers::shader_fuzzer_layer::vkGetDeviceProcAddr(device, pName);
 }
 
 #if defined(__ANDROID__)
@@ -498,7 +492,7 @@ vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount,
                                    VkLayerProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateInstanceLayerProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateInstanceLayerProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateInstanceLayerProperties(
       pPropertyCount, pProperties);
 }
 
@@ -507,7 +501,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
     VkLayerProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateDeviceLayerProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateDeviceLayerProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateDeviceLayerProperties(
       physicalDevice, pPropertyCount, pProperties);
 }
 
@@ -517,7 +511,7 @@ vkEnumerateInstanceExtensionProperties(const char* pLayerName,
                                        VkExtensionProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateInstanceExtensionProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateInstanceExtensionProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateInstanceExtensionProperties(
       pLayerName, pPropertyCount, pProperties);
 }
 
@@ -528,7 +522,7 @@ vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
                                      VkExtensionProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateDeviceExtensionProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateDeviceExtensionProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateDeviceExtensionProperties(
       physicalDevice, pLayerName, pPropertyCount, pProperties);
 }
 

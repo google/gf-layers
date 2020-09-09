@@ -2,23 +2,23 @@
   "file_format_version" : "1.1.2",
   "layers": [
     {
-      "name": "VkLayer_GF_frame_counter",
+      "name": "VkLayer_GF_shader_fuzzer",
       "type": "GLOBAL",
-      "library_path": "./libVkLayer_GF_frame_counter.so",
+      "library_path": "./libVkLayer_GF_shader_fuzzer.so",
       "api_version" : "1.1.130",
       "implementation_version" : "1",
       "description" : "Frame counter layer.",
       "functions": {
-        "vkGetDeviceProcAddr": "VkLayer_GF_frame_counterGetDeviceProcAddr",
-        "vkGetInstanceProcAddr": "VkLayer_GF_frame_counterGetInstanceProcAddr",
-        "vkNegotiateLoaderLayerInterfaceVersion": "VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion"
+        "vkGetDeviceProcAddr": "VkLayer_GF_shader_fuzzerGetDeviceProcAddr",
+        "vkGetInstanceProcAddr": "VkLayer_GF_shader_fuzzerGetInstanceProcAddr",
+        "vkNegotiateLoaderLayerInterfaceVersion": "VkLayer_GF_shader_fuzzerNegotiateLoaderLayerInterfaceVersion"
       }
     }
   ],
   "enable_environment": {
-    "VkLayer_GF_frame_counter_V1_ENABLE": "1"
+    "VkLayer_GF_shader_fuzzer_V1_ENABLE": "1"
   },
   "disable_environment": {
-    "VkLayer_GF_frame_counter_V1_DISABLE": "1"
+    "VkLayer_GF_shader_fuzzer_V1_DISABLE": "1"
   }
 }

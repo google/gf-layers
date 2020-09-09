@@ -2,9 +2,9 @@
 # Generated file; do not edit.
 {
 global:
-    VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion;
-    VkLayer_GF_frame_counterGetInstanceProcAddr;
-    VkLayer_GF_frame_counterGetDeviceProcAddr;
+    VkLayer_GF_shader_fuzzerNegotiateLoaderLayerInterfaceVersion;
+    VkLayer_GF_shader_fuzzerGetInstanceProcAddr;
+    VkLayer_GF_shader_fuzzerGetDeviceProcAddr;
 local:
     *;
 };

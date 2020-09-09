@@ -19,16 +19,15 @@ project(gf-layers
     DESCRIPTION "Vulkan layers"
     LANGUAGES CXX)
 
-option(
-    GF_LAYERS_WARNINGS_AS_ERRORS
-    "Enables warnings as errors for gf-layers targets, but only if gf-layers is the root project."
-    ON)
+# Note: this is not an option; it is used to set the default value for some options below.
+# It is set to ON if gf-layers is the root project being built, and OFF otherwise.
+set(GF_LAYERS_PROJECT_IS_ROOT OFF)
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    set(GF_LAYERS_PROJECT_IS_ROOT ON)
+endif()
 
-option(
-    GF_LAYERS_USE_LLVM_LIBCPP
-    "Use LLVM's libc++ when using Clang, plus various other LLVM options, but only if gf-layers is the root project."
-    OFF)
 
+# Options (i.e. cache variables) defined via "option" (if ON/OFF) or "set" (if not ON/OFF):
 set(
     GF_LAYERS_VULKAN_HEADERS_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers/include
@@ -57,20 +56,28 @@ set(
     PATH
     "Path to a https://github.com/protocolbuffers/protobuf repo.")
 
+option(
+    GF_LAYERS_USE_LLVM_LIBCPP
+    "Use LLVM's libc++ when using Clang, plus various other LLVM options, but only if gf-layers is the root project."
+    OFF)
 
-##
-## Function: gf_layers_add_common(target)
-##
-## Adds common C++ compiler flags to |target|. Does nothing by default.
-## Redefined below if we are the root project.
-## This ensures we do not mess with compilation flags if we are a subproject.
-##
-function(gf_layers_add_common target)
-endfunction()
+option(
+    GF_LAYERS_WARNINGS_AS_ERRORS
+    "Enables warnings as errors for gf-layers targets."
+    ${GF_LAYERS_PROJECT_IS_ROOT})
+
+option(
+    GF_LAYERS_WARNINGS_EXTRA
+    "Enables extra warnings via compile flags for gf-layers targets."
+    ${GF_LAYERS_PROJECT_IS_ROOT})
+
+option(
+    GF_LAYERS_WARNING_SUPPRESSIONS
+    "Enables suppression of specific warnings for gf-layers targets."
+    ${GF_LAYERS_PROJECT_IS_ROOT})
 
 
-# Only do the following if we are the root project being built.
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+if(GF_LAYERS_PROJECT_IS_ROOT)
 
     # Set some global compiler flags.
     set(CMAKE_CXX_STANDARD 17)
@@ -79,8 +86,16 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-    # If using Clang then use LLVM's libc++ and various other options.
-    if(GF_LAYERS_USE_LLVM_LIBCPP AND CMAKE_CXX_COMPILER_ID STREQUAL Clang AND NOT ANDROID)
+    # GF_LAYERS_USE_LLVM_LIBCPP=ON means we will statically link (if using non-Android Clang):
+    #  - libc++
+    #  - compiler-rt
+    #  - libc++abi
+    #  - libunwind
+    # This is very useful for getting libraries that only depend on libc.
+    if(
+        GF_LAYERS_USE_LLVM_LIBCPP AND
+        CMAKE_CXX_COMPILER_ID STREQUAL Clang AND
+        NOT ANDROID)
 
         # TODO(paulthomson): We may want to build a custom version of Clang instead of messing with its options.
 
@@ -117,67 +132,6 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
         add_link_options(${GF_LAYERS_TEMP_UNWIND_PATH})
     endif()
-
-
-    ##
-    ## Function: gf_layers_add_common(target)
-    ##
-    ## Adds common C++ compiler flags (e.g. all warnings) to |target|.
-    ##
-    function(gf_layers_add_common target)
-
-        if(MSVC)
-            # Add all warnings.
-            target_compile_options(${target} PRIVATE /Wall)
-
-            # Warnings as errors.
-            if(GF_LAYERS_WARNINGS_AS_ERRORS)
-                target_compile_options(
-                    ${target}
-                    PRIVATE
-                    # Treat angle bracket headers as external headers.
-                    #/external:anglebrackets
-                    # Disable warnings from external headers.
-                    #/external:W0
-                    # Disable warnings
-                    /WX  # warnings as errors
-                    /wd4068  # warning C4068: unknown pragma
-                    /wd4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
-                    /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
-                    /wd4625  # copy constructor was implicitly defined as deleted
-                    /wd5026  # move constructor was implicitly defined as deleted
-                    /wd4626  # assignment operator was implicitly defined as deleted
-                    /wd5027  # move assignment operator was implicitly defined as deleted
-                    /wd4514  # warning C4514: 'x': unreferenced inline function has been removed
-                    /wd4711  # warning C4711: function 'x' selected for automatic inline expansion (informational)
-                    /wd4710  # warning C4710: 'x': function not inlined (informational)
-                    /wd4996  # warning C4996: 'getenv': This function or variable may be unsafe.
-                )
-            endif()
-        else()
-
-            # Add all warnings.
-            target_compile_options(${target} PRIVATE -Wall -Wextra -pedantic -Wno-unknown-pragmas)
-
-            # -Weverything: Clang only.
-            if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
-                target_compile_options(
-                    ${target}
-                    PRIVATE
-                    -Wno-unknown-warning-option
-                    -Wno-c++98-compat
-                    -Wno-c++98-compat-pedantic
-                    -Wno-padded
-                    -Weverything)
-            endif()
-
-            # Warnings as errors.
-            if(GF_LAYERS_WARNINGS_AS_ERRORS)
-                target_compile_options(${target} PRIVATE -Werror)
-            endif()
-
-        endif()
-    endfunction()
 endif()
 
 # Layer manifest files (VkLayer_GF_foo_plat.json) have the |plat| suffix as
@@ -221,6 +175,8 @@ target_include_directories(
 ##
 ## Project: SPIRV-Tools.
 ##
+## Provides targets: SPIRV-Tools-opt, SPIRV-Tools-fuzz, and others.
+##
 if(NOT TARGET SPIRV-Tools-opt)
     if(NOT IS_DIRECTORY ${GF_LAYERS_SPIRV_TOOLS_REPO_DIR})
         message(
@@ -228,44 +184,130 @@ if(NOT TARGET SPIRV-Tools-opt)
             "Could not find SPIRV-Tools at ${GF_LAYERS_SPIRV_TOOLS_REPO_DIR}. "
             "Try fetching submodules or set GF_LAYERS_SPIRV_TOOLS_REPO_DIR.")
     endif()
+    # Requires SPIRV-Headers.
+    if(NOT IS_DIRECTORY ${GF_LAYERS_SPIRV_HEADERS_REPO_DIR})
+        message(
+            FATAL_ERROR
+            "Could not find SPIRV-Headers at ${GF_LAYERS_SPIRV_HEADERS_REPO_DIR}. "
+            "Try fetching submodules or set GF_LAYERS_SPIRV_HEADERS_REPO_DIR.")
+    endif()
+
+    # The presence of SPIRV-Headers_SOURCE_DIR would normally imply that
+    # add_subdirectory(/path/to/SPIRV-Tools/) has been executed.
+    # However, SPIRV-Tools does not actually use any targets from SPIRV-Headers;
+    # it only uses SPIRV-Headers_SOURCE_DIR. Thus, we can avoid using
+    # add_subdirectory(...) by setting this variable.
+    set(SPIRV-Headers_SOURCE_DIR ${GF_LAYERS_SPIRV_HEADERS_REPO_DIR})
+
+    # Enable the SPIRV-Tools-fuzz target, which is disabled by default.
+    set(SPIRV_BUILD_FUZZER ON CACHE BOOL "Build spirv-fuzz")
 
     add_subdirectory(${GF_LAYERS_SPIRV_TOOLS_REPO_DIR} EXCLUDE_FROM_ALL)
+endif()
+# The SPIRV-Tools-fuzz target is disabled by default; check that it is indeed
+# enabled.
+if(NOT TARGET SPIRV-Tools-fuzz)
+    message(
+        FATAL_ERROR
+        "The SPIRV-Tools-fuzz target is not enabled; make sure you have enabled the required option in SPIRV-Tools.")
 endif()
 
 
 ##
 ## Target: gf_layers_spirv_fuzz
 ##
-## Provides the spirv-fuzz library from SPIRV-Tools.
+## Provides the SPIRV-Tools-fuzz target with extra headers.
 ##
-add_library(gf_layers_spirv_fuzz cmake/empty.cpp)
-target_link_libraries(gf_layers_spirv_fuzz PUBLIC SPIRV-Tools-fuzz)
+add_library(gf_layers_spirv_fuzz INTERFACE)
 
+# Targets that link gf_layers_spirv_fuzz should get SPIRV-Tools-fuzz.
+# The following command: target_link_libraries(gf_layers_spirv_fuzz PUBLIC SPIRV-Tools-fuzz)
+# is not supported by CMake for INTERFACE libraries. But we can achieve it manually:
+set_property(
+    TARGET gf_layers_spirv_fuzz
+    APPEND
+    PROPERTY INTERFACE_LINK_LIBRARIES
+    SPIRV-Tools-fuzz
+)
 # We need to add the SPIRV-Tools root (source and binary directories) as
 # include paths, because we need to use internal headers from SPIRV-Tools.
-# We can get these directories from the SOURCE_DIR and BINARY_DIR target
-# properties.
-
-get_target_property(
-    GF_LAYERS_TEMP_SPIRV_FUZZ_SOURCE_DIR
-    SPIRV-Tools-fuzz
-    SOURCE_DIR)
-
-get_target_property(
-    GF_LAYERS_TEMP_SPIRV_FUZZ_BINARY_DIR
-    SPIRV-Tools-fuzz
-    BINARY_DIR)
-
+# CMake adds variables <PROJECT-NAME>_SOURCE_DIR and <PROJECT-NAME>_BINARY_DIR
+# when it sees the project(<PROJECT-NAME> ...) command, so we can use these.
+if(NOT SPIRV-Tools_SOURCE_DIR OR NOT SPIRV-Tools_BINARY_DIR)
+    message(
+        FATAL_ERROR
+        "Could not find CMake variables SPIRV-Tools_SOURCE_DIR and/or SPIRV-Tools_BINARY_DIR. "
+        "We require access to internal SPIRV-Tools headers, so the full source is required "
+        "(as opposed to an \"installed\" version of SPIRV-Tools).")
+endif()
 target_include_directories(
     gf_layers_spirv_fuzz
     PUBLIC
+    ${SPIRV-Tools_SOURCE_DIR}
+    ${SPIRV-Tools_BINARY_DIR})
 
-    # The source directory is: /path/to/SPIRV-Tools/source/fuzz/
-    # Hence: ../..
 
-    ${GF_LAYERS_TEMP_SPIRV_FUZZ_SOURCE_DIR}/../..
-    ${GF_LAYERS_TEMP_SPIRV_FUZZ_BINARY_DIR}/../..)
+##
+## The targets that follow are all gf-layers targets.
+## We now conditionally set some compile options related to warnings.
+## Most of these will only be set if gf-layers is the root project being built.
+## Using "add_*" functions is generally discouraged, but is suitable for
+## "global" compile options. These will propagate to subdirectories via
+## add_subdirectory(...) and will not be PUBLIC compile options (i.e. they
+## will NOT propagate to targets above this project that link with these
+## targets.
+##
 
+if(GF_LAYERS_WARNINGS_AS_ERRORS)
+    if(MSVC)
+        add_compile_options(/WX)
+    else()
+        add_compile_options(-Werror)
+    endif()
+endif()
+
+if(GF_LAYERS_WARNINGS_EXTRA)
+    if(MSVC)
+        add_compile_options(/Wall)
+    else()
+        add_compile_options(-Wall -Wextra -pedantic)
+        if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+            add_compile_options(-Weverything)
+        endif()
+    endif()
+endif()
+
+if(GF_LAYERS_WARNING_SUPPRESSIONS)
+    if(MSVC)
+        add_compile_options(
+            # Treat angle bracket headers as external headers.
+            #/external:anglebrackets
+
+            # Disable warnings from external headers.
+            #/external:W0
+
+            # Disable specific warnings:
+            /wd4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
+            /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
+            /wd4625  # copy constructor was implicitly defined as deleted
+            /wd5026  # move constructor was implicitly defined as deleted
+            /wd4626  # assignment operator was implicitly defined as deleted
+            /wd5027  # move assignment operator was implicitly defined as deleted
+            /wd4514  # warning C4514: 'x': unreferenced inline function has been removed
+            /wd4711  # warning C4711: function 'x' selected for automatic inline expansion (informational)
+            /wd4710  # warning C4710: 'x': function not inlined (informational)
+            /wd4996  # warning C4996: 'getenv': This function or variable may be unsafe.
+        )
+    else()
+        add_compile_options(
+            -Wno-unknown-pragmas
+            -Wno-unknown-warning-option
+            -Wno-c++98-compat
+            -Wno-c++98-compat-pedantic
+            -Wno-padded
+        )
+    endif()
+endif()
 
 
 ##
@@ -275,7 +317,6 @@ target_include_directories(
 ##
 add_subdirectory(src/gf_layers_layer_util EXCLUDE_FROM_ALL)  # Provides gf_layers_layer_util_SOURCES.
 add_library(gf_layers_layer_util STATIC ${gf_layers_layer_util_SOURCES})
-gf_layers_add_common(gf_layers_layer_util)
 target_include_directories(gf_layers_layer_util PUBLIC src/gf_layers_layer_util/include)
 target_link_libraries(gf_layers_layer_util PUBLIC gf_layers_vulkan_headers)
 # We do not want Vulkan function prototypes. Our util library must not call
@@ -334,7 +375,6 @@ function(gf_layers_add_vulkan_layer name)
     add_subdirectory(src/${name})
     add_library(${name} SHARED ${${name}_SOURCES})
     target_include_directories(${name} PUBLIC src/${name}/include)
-    gf_layers_add_common(${name})
     target_link_libraries(
             ${name}
             PRIVATE

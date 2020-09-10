@@ -31,7 +31,7 @@
 #include "gf_layers_layer_util/util.h"
 
 #pragma GCC diagnostic push
-#pragma warning(push, 1)
+#pragma warning(push)
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wpragmas"
@@ -52,6 +52,8 @@
 #pragma GCC diagnostic ignored "-Wswitch-enum"
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 #pragma GCC diagnostic ignored "-Wweak-vtables"
+
+#pragma warning(disable : 2220)
 
 #include "google/protobuf/stubs/status.h"
 #include "google/protobuf/util/json_util.h"

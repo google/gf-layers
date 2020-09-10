@@ -1,4 +1,9 @@
 
+# Notes
+
+https://github.com/KhronosGroup/Vulkan-Loader/blob/master/loader/LoaderAndLayerInterface.md
+
+https://github.com/KhronosGroup/Vulkan-Loader/blob/master/loader/LoaderAndLayerInterface.md#creating-new-dispatchable-objects
 
 Layers typically have a library name like "libVkLayer_blah.so"
 and a name (the name in the JSON manifest or returned from vkEnumerateInstanceLayerProperties) like "VK_LAYER_ORG_blah",
@@ -49,7 +54,7 @@ The following are dispatchable handles:
 Using the dispatch table pointer of such handles as keys means we don't need
 to track physical devices, queues, or command buffers, unless we want to
 store information about each of these objects.
- 
+
 Non-dispatchable handles are not guaranteed to be unique
 within or across types.
 However, they are likely to be unique most of the time,

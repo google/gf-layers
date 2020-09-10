@@ -30,8 +30,8 @@
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
 
-#pragma GCC diagnostic push // Clang, GCC.
-#pragma warning(push, 1) // MSVC: also reduces warning level to W1.
+#pragma GCC diagnostic push  // Clang, GCC.
+#pragma warning(push, 1)     // MSVC: also reduces warning level to W1.
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wpragmas"

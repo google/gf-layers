@@ -31,7 +31,11 @@
 #include "gf_layers_layer_util/util.h"
 
 #pragma GCC diagnostic push
-#pragma warning(push, 0)
+#pragma warning(push, 1)
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wpragmas"
+#endif
 
 // TODO(paulthomson): These are protobuf warning suppressions that could be
 //  moved upstream to SPIRV-Tools or fixed in protobuf.

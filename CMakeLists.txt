@@ -256,7 +256,7 @@ if(NOT spirv-tools_SOURCE_DIR OR NOT spirv-tools_BINARY_DIR)
         FATAL_ERROR
         "Could not find CMake variables spirv-tools_SOURCE_DIR and/or spirv-tools_BINARY_DIR. "
         "We require access to internal SPIRV-Tools headers, so the full source is required "
-        "(as opposed to an \"installed\" version of SPIRV-Tools).")
+        "(as opposed to an installed version of SPIRV-Tools).")
 endif()
 target_include_directories(
     gf_layers_spirv_fuzz
@@ -337,6 +337,7 @@ add_subdirectory(src/gf_layers_layer_util EXCLUDE_FROM_ALL)  # Provides gf_layer
 add_library(gf_layers_layer_util STATIC ${gf_layers_layer_util_SOURCES})
 target_include_directories(gf_layers_layer_util PUBLIC src/gf_layers_layer_util/include)
 target_link_libraries(gf_layers_layer_util PUBLIC gf_layers_vulkan_headers)
+target_compile_features(gf_layers_layer_util PUBLIC cxx_std_17)
 # We do not want Vulkan function prototypes. Our util library must not call
 # Vulkan functions directly.
 target_compile_definitions(gf_layers_layer_util PRIVATE VK_NO_PROTOTYPES)

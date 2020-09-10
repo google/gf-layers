@@ -30,22 +30,24 @@
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
 
+#pragma GCC diagnostic push
+#pragma warning(push, 0)
+
 // TODO(paulthomson): These are protobuf warning suppressions that could be
 //  moved upstream to SPIRV-Tools or fixed in protobuf.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-id-macro"
-#pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wsign-conversion"
-#pragma clang diagnostic ignored "-Wextra-semi-stmt"
-#pragma clang diagnostic ignored "-Winconsistent-missing-destructor-override"
-#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wreserved-id-macro"
+#pragma GCC diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
+#pragma GCC diagnostic ignored "-Winconsistent-missing-destructor-override"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // TODO(paulthomson): SPIRV-Tools warning suppressions.
-#pragma clang diagnostic ignored "-Wnewline-eof"
-#pragma clang diagnostic ignored "-Wswitch-enum"
-#pragma clang diagnostic ignored "-Wold-style-cast"
-#pragma clang diagnostic ignored "-Wweak-vtables"
+#pragma GCC diagnostic ignored "-Wnewline-eof"
+#pragma GCC diagnostic ignored "-Wswitch-enum"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wweak-vtables"
 
 #include "google/protobuf/stubs/status.h"
 #include "google/protobuf/util/json_util.h"
@@ -57,7 +59,8 @@
 #include "spirv-tools/libspirv.hpp"
 #include "tools/io.h"
 
-#pragma clang diagnostic pop
+#pragma warning(pop)
+#pragma GCC diagnostic pop
 
 namespace gf_layers::shader_fuzzer_layer {
 

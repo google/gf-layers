@@ -17,6 +17,7 @@
 
 #include <array>
 #include <atomic>
+#include <cinttypes>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -183,7 +184,8 @@ std::vector<uint32_t> TryFuzzingShader(
   uint8_t minor_version = SPV_SPIRV_VERSION_MINOR_PART(version_word);
 
   if (major_version != 1) {
-    LOG("Unknown SPIR-V major version %u; shader %lu will not be fuzzed.",
+    LOG("Unknown SPIR-V major version %u; shader %" PRIu64
+        " will not be fuzzed.",
         major_version, shader_module_number);
     return {};
   }
@@ -211,7 +213,8 @@ std::vector<uint32_t> TryFuzzingShader(
       target_env = SPV_ENV_UNIVERSAL_1_5;
       break;
     default:
-      LOG("Unknown SPIR-V minor version %u; shader %lu will not be fuzzed.",
+      LOG("Unknown SPIR-V minor version %u; shader %" PRIu64
+          " will not be fuzzed.",
           minor_version, shader_module_number);
       return std::vector<uint32_t>();
   }

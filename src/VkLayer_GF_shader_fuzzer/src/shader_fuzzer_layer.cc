@@ -30,8 +30,8 @@
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
 
-#pragma GCC diagnostic push
-#pragma warning(push)
+#pragma GCC diagnostic push // Clang, GCC.
+#pragma warning(push, 1) // MSVC: also reduces warning level to W1.
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wpragmas"
@@ -53,7 +53,17 @@
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 #pragma GCC diagnostic ignored "-Wweak-vtables"
 
-#pragma warning(disable : 2220)
+// behavior change:
+// __is_pod(google::protobuf::internal::AuxiliaryParseTableField) has different
+// value in previous versions
+#pragma warning(disable : 4647)
+
+// reinterpret_cast used between related classes:
+// 'google::protobuf::SourceContext' and 'google::protobuf::MessageLite'
+#pragma warning(disable : 4946)
+
+// 'initializing': conversion from '_Ty' to '_Ty1', signed/unsigned mismatch
+#pragma warning(disable : 4365)
 
 #include "google/protobuf/stubs/status.h"
 #include "google/protobuf/util/json_util.h"

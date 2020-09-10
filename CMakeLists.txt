@@ -305,6 +305,7 @@ if(GF_LAYERS_WARNING_SUPPRESSIONS)
             #/external:W0
 
             # Disable specific warnings:
+            /wd4068  # warning C4068: unknown pragma
             /wd4820  # warning C4820: 'xxx': 'x' bytes padding added after data member 'xxx'
             /wd4191  # warning C4191: 'reinterpret_cast': unsafe conversion from 'x' to 'x'
             /wd4625  # copy constructor was implicitly defined as deleted

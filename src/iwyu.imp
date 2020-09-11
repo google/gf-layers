@@ -22,6 +22,7 @@
   { symbol:  ["std::ofstream", "private", "<fstream>", "public"] },
   { symbol:  ["std::ostringstream", "private", "<sstream>", "public"] },
   { symbol:  ["std::string", "private", "<string>", "public"] },
+  { symbol:  ["std::stringstream", "private", "<sstream>", "public"] },
 
   # Android <mutex>.
   { include: ["<__mutex_base>", "private", "<mutex>", "public"] },

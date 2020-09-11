@@ -1,0 +1,24 @@
+{
+  "file_format_version" : "1.1.2",
+  "layers": [
+    {
+      "name": "VkLayer_GF_shader_fuzzer",
+      "type": "GLOBAL",
+      "library_path": ".\\VkLayer_GF_shader_fuzzer.dll",
+      "api_version" : "1.1.130",
+      "implementation_version" : "1",
+      "description" : "Shader fuzzer layer.",
+      "functions": {
+        "vkGetDeviceProcAddr": "VkLayer_GF_shader_fuzzerGetDeviceProcAddr",
+        "vkGetInstanceProcAddr": "VkLayer_GF_shader_fuzzerGetInstanceProcAddr",
+        "vkNegotiateLoaderLayerInterfaceVersion": "VkLayer_GF_shader_fuzzerNegotiateLoaderLayerInterfaceVersion"
+      }
+    }
+  ],
+  "enable_environment": {
+    "VkLayer_GF_shader_fuzzer_V1_ENABLE": "1"
+  },
+  "disable_environment": {
+    "VkLayer_GF_shader_fuzzer_V1_DISABLE": "1"
+  }
+}

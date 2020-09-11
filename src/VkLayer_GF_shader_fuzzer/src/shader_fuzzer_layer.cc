@@ -17,18 +17,68 @@
 
 #include <array>
 #include <atomic>
-#include <chrono>
+#include <cinttypes>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
 
-namespace gf_layers::frame_counter_layer {
+#pragma GCC diagnostic push  // Clang, GCC.
+#pragma warning(push, 1)     // MSVC: also reduces warning level to W1.
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wpragmas"
+#endif
+
+// TODO(paulthomson): These are protobuf warning suppressions that could be
+//  moved upstream to SPIRV-Tools or fixed in protobuf.
+#pragma GCC diagnostic ignored "-Wreserved-id-macro"
+#pragma GCC diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
+#pragma GCC diagnostic ignored "-Winconsistent-missing-destructor-override"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+// TODO(paulthomson): SPIRV-Tools warning suppressions.
+#pragma GCC diagnostic ignored "-Wnewline-eof"
+#pragma GCC diagnostic ignored "-Wswitch-enum"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wweak-vtables"
+
+// behavior change:
+// __is_pod(google::protobuf::internal::AuxiliaryParseTableField) has different
+// value in previous versions
+#pragma warning(disable : 4647)
+
+// reinterpret_cast used between related classes:
+// 'google::protobuf::SourceContext' and 'google::protobuf::MessageLite'
+#pragma warning(disable : 4946)
+
+// 'initializing': conversion from '_Ty' to '_Ty1', signed/unsigned mismatch
+#pragma warning(disable : 4365)
+
+#include "google/protobuf/stubs/status.h"
+#include "google/protobuf/util/json_util.h"
+#include "source/fuzz/fuzzer.h"
+#include "source/fuzz/fuzzer_util.h"
+#include "source/fuzz/protobufs/spvtoolsfuzz.pb.h"
+#include "source/spirv_constant.h"
+#include "spirv-tools/libspirv.h"
+#include "spirv-tools/libspirv.hpp"
+#include "tools/io.h"
+
+#pragma warning(pop)
+#pragma GCC diagnostic pop
+
+namespace gf_layers::shader_fuzzer_layer {
 
 struct InstanceData {
   VkInstance instance;
@@ -56,7 +106,7 @@ struct DeviceData {
 
   // Other device functions:
 
-  PFN_vkQueuePresentKHR vkQueuePresentKHR;
+  PFN_vkCreateShaderModule vkCreateShaderModule;
 };
 
 using InstanceMap = gf_layers::ProtectedTinyStaleMap<void*, InstanceData>;
@@ -64,28 +114,37 @@ using DeviceMap = gf_layers::ProtectedTinyStaleMap<void*, DeviceData>;
 
 namespace {
 
+// The number of digits used in output filenames.
+// E.g. shader_00005_fuzzed.spv.
+//             ^ 5 digits
+const size_t kNumberPaddingInFilename = 6;
+
 // Read-only once initialized.
-struct FrameCounterLayerSettings {
+struct ShaderFuzzerLayerSettings {
   bool init = false;
-  uint64_t start_frame = 0;
-  uint64_t end_frame = 0;
-  std::string output_file;
+
+  // The output file path prefix.
+  // E.g. output_prefix="/data/output/shader"
+  // Some files:
+  //   /data/output/shader_000001.spv
+  //   /data/output/shader_000002.spv
+  //   ...
+  std::string output_prefix = "shader";
 };
 
 struct GlobalData {
   InstanceMap instance_map;
   DeviceMap device_map;
-  std::atomic<uint64_t> frame_counter{};
 
-  gf_layers::MutexType start_time_mutex;
-  std::chrono::steady_clock::time_point start_time;
+  // Counter used to make unique output filenames.
+  std::atomic<uint64_t> shader_module_counter{};
 
   // In vkCreateInstance, we initialize |settings| by reading environment
   // variables while holding |settings_mutex|, after which |settings| is
   // read-only. Thus, in instance or device functions (such as
   // vkQueuePresentKHR) we can read |settings| without holding |settings_mutex|.
   gf_layers::MutexType settings_mutex;
-  FrameCounterLayerSettings settings;
+  ShaderFuzzerLayerSettings settings;
 };
 
 #pragma clang diagnostic push
@@ -101,114 +160,216 @@ struct GlobalData {
 GlobalData global_data_;  // NOLINT(cert-err58-cpp)
 #pragma clang diagnostic pop
 
-GlobalData* get_global_data() { return &global_data_; }
+GlobalData* GetGlobalData() { return &global_data_; }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
-    "VkLayer_GF_frame_counter",     // layerName
+    "VkLayer_GF_shader_fuzzer",     // layerName
     VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
     1,                              // implementationVersion
-    "Frame counter layer.",         // description
+    "Shader fuzzer layer.",         // description
 }}};
 
-bool is_this_layer(const char* pLayerName) {
+bool IsThisLayer(const char* pLayerName) {
   return ((pLayerName != nullptr) &&
           strcmp(pLayerName, kLayerProperties[0].layerName) == 0);
 }
 
-void init_settings_if_needed() {
-  gf_layers::ScopedLock lock(get_global_data()->settings_mutex);
+void InitSettingsIfNeeded() {
+  gf_layers::ScopedLock lock(GetGlobalData()->settings_mutex);
 
-  FrameCounterLayerSettings& settings = get_global_data()->settings;
+  ShaderFuzzerLayerSettings& settings = GetGlobalData()->settings;
 
   if (!settings.init) {
-    get_setting_uint64("VkLayer_GF_frame_counter_START_FRAME",
-                       "debug.gf.fc.start_frame", &settings.start_frame);
-    get_setting_uint64("VkLayer_GF_frame_counter_END_FRAME",
-                       "debug.gf.fc.end_frame", &settings.end_frame);
-    get_setting_string("VkLayer_GF_frame_counter_OUTPUT_FILE",
-                       "debug.gf.fc.output_file", &settings.output_file);
+    get_setting_string("VkLayer_GF_shader_fuzzer_OUTPUT_PREFIX",
+                       "debug.gf.sf.output_prefix", &settings.output_prefix);
     settings.init = true;
   }
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
-  GlobalData* global_data = get_global_data();
-  DeviceData* device_data = global_data->device_map.get(device_key(queue));
+// Returns an empty vector if fuzzing was not possible.  Otherwise, returns a
+// vector representing the fuzzed version of the shader referred to by
+// |pCreateInfo->pCode|.
+std::vector<uint32_t> TryFuzzingShader(
+    VkShaderModuleCreateInfo const* pCreateInfo, GlobalData* global_data) {
+  // Grab a new suffix for this shader module.
+  uint64_t shader_module_number = global_data->shader_module_counter++;
 
-  // Call the original function.
-  VkResult result = device_data->vkQueuePresentKHR(queue, pPresentInfo);
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  uint32_t version_word = pCreateInfo->pCode[1];
 
-  // If the function succeeded:
-  if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
-    // If the start and end frame are the same then there is nothing we can do.
-    // Return early.
-    if (global_data->settings.start_frame == global_data->settings.end_frame) {
-      return result;
-    }
+  // NOLINTNEXTLINE(hicpp-signed-bitwise)
+  uint8_t major_version = SPV_SPIRV_VERSION_MAJOR_PART(version_word);
+  // NOLINTNEXTLINE(hicpp-signed-bitwise)
+  uint8_t minor_version = SPV_SPIRV_VERSION_MINOR_PART(version_word);
 
-    // Atomically increment our frame counter.
-    uint64_t current_frame = global_data->frame_counter++;
+  if (major_version != 1) {
+    LOG("Unknown SPIR-V major version %u; shader %" PRIu64
+        " will not be fuzzed.",
+        major_version, shader_module_number);
+    return {};
+  }
 
-    // If we have hit the start frame...
-    if (current_frame == global_data->settings.start_frame) {
-      // Start the timer.
-      auto start_time = std::chrono::steady_clock::now();
-      // Although unlikely, another thread might be calling vkQueuePresentKHR
-      // (targeting a different VkQueue) so that the "else if" block below for
-      // the end_frame is executing concurrently. Hence, we use a mutex.
-      {
-        ScopedLock lock(global_data->start_time_mutex);
-        global_data->start_time = start_time;
-      }
-    } else if (current_frame == global_data->settings.end_frame) {
-      // We have hit the end frame.
-      // Calculate the duration.
-      auto end_time = std::chrono::steady_clock::now();
-      std::chrono::steady_clock::time_point start_time;
-      {
-        ScopedLock lock(global_data->start_time_mutex);
-        start_time = global_data->start_time;
-      }
+  spv_target_env target_env;  // NOLINT(cppcoreguidelines-init-variables)
 
-      auto duration = end_time - start_time;
+  switch (minor_version) {
+    case 0:
+      target_env = SPV_ENV_UNIVERSAL_1_0;
+      break;
+    case 1:
+      target_env = SPV_ENV_UNIVERSAL_1_1;
+      break;
+    case 2:
+      target_env = SPV_ENV_UNIVERSAL_1_2;
+      break;
+    case 3:
+      target_env = SPV_ENV_UNIVERSAL_1_3;
+      break;
+    case 4:
+      target_env = SPV_ENV_UNIVERSAL_1_4;
+      break;
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+    case 5:
+      target_env = SPV_ENV_UNIVERSAL_1_5;
+      break;
+    default:
+      LOG("Unknown SPIR-V minor version %u; shader %" PRIu64
+          " will not be fuzzed.",
+          minor_version, shader_module_number);
+      return std::vector<uint32_t>();
+  }
 
-      if (start_time == std::chrono::steady_clock::time_point{}) {
-        // Start time was not initialized; this is unlikely but could happen via
-        // concurrent calls to vkQueuePresentKHR.
-        // Set duration to 0.
-        duration = std::chrono::steady_clock::duration{};
-      }
+  // |pCreateInfo->codeSize| gives the size in bytes; convert it to words.
+  const uint32_t code_size_in_words =
+      static_cast<uint32_t>(pCreateInfo->codeSize) / 4;
 
-      // Write out the information to the output file.
-      {
-        // Write to a string stream first so we can log the information on
-        // failure.
-        std::ostringstream ss;
-        ss << "Start frame: " << global_data->settings.start_frame << std::endl;
-        ss << "End frame: " << global_data->settings.end_frame << std::endl;
-        ss << "Frame count: "
-           << (global_data->settings.end_frame -
-               global_data->settings.start_frame)
-           << std::endl;
-        ss << "Duration: " << std::chrono::nanoseconds(duration).count() << "ns"
-           << std::endl;
+  spvtools::SpirvTools tools(target_env);
 
-        // Write to the file.
-        std::ofstream output_file_stream(global_data->settings.output_file);
-        output_file_stream << ss.str() << std::flush;
-        output_file_stream.close();
+  if (!tools.IsValid()) {
+    LOG("Did not manage to create a SPIRV-Tools instance; shaders will not be "
+        "fuzzed.");
+    return {};
+  }
 
-        // Log on failure.
-        if (output_file_stream.fail()) {
-          LOG("Failed to write the duration info to file %s. The information "
-              "was: %s",
-              global_data->settings.output_file.c_str(), ss.str().c_str());
-        }
-      }
+  // Create a fuzzer and the various parameters required for fuzzing.
+  spvtools::ValidatorOptions validator_options;
+  spvtools::fuzz::Fuzzer fuzzer(target_env,
+                                static_cast<uint32_t>(shader_module_number),
+                                true, validator_options);
+  std::vector<uint32_t> binary_in(
+      pCreateInfo->pCode,
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      pCreateInfo->pCode + code_size_in_words);
+
+  std::vector<uint32_t> result;
+  spvtools::fuzz::protobufs::FactSequence no_facts;
+  std::vector<spvtools::fuzz::fuzzerutil::ModuleSupplier> no_donors;
+  spvtools::fuzz::protobufs::TransformationSequence transformation_sequence;
+
+  // Fuzz the shader into |result|.
+  auto fuzzer_result_status = fuzzer.Run(binary_in, no_facts, no_donors,
+                                         &result, &transformation_sequence);
+
+  if (fuzzer_result_status !=
+      spvtools::fuzz::Fuzzer::FuzzerResultStatus::kComplete) {
+    LOG("Fuzzing failed.");
+    return {};
+  }
+
+  // Get the shader module number as a string.
+  std::string shader_module_number_padded;
+  {
+    std::stringstream shader_module_number_stream;
+    shader_module_number_stream << std::setfill('0')
+                                << std::setw(kNumberPaddingInFilename)
+                                << shader_module_number;
+    shader_module_number_padded = shader_module_number_stream.str();
+  }
+
+  // Write out the original shader module.
+  {
+    std::stringstream original_shader_binary_name;
+    original_shader_binary_name << global_data->settings.output_prefix << "_"
+                                << shader_module_number_padded
+                                << "_original.spv";
+    WriteFile<uint32_t>(original_shader_binary_name.str().c_str(), "wb",
+                        pCreateInfo->pCode, code_size_in_words);
+  }
+
+  // Write out the fuzzed shader module
+  {
+    std::stringstream fuzzed_shader_binary_name;
+    fuzzed_shader_binary_name << global_data->settings.output_prefix << "_"
+                              << shader_module_number_padded << "_fuzzed.spv";
+    WriteFile<uint32_t>(fuzzed_shader_binary_name.str().c_str(), "wb",
+                        result.data(), result.size());
+  }
+
+  // Write out the transformations
+  {
+    std::stringstream transformations_name;
+    transformations_name << global_data->settings.output_prefix << "_"
+                         << shader_module_number_padded
+                         << "_fuzzed.transformations";
+    std::ofstream transformations_file(transformations_name.str(),
+                                       std::ios::out | std::ios::binary);
+    transformation_sequence.SerializeToOstream(&transformations_file);
+  }
+
+  // Write out the transformations in JSON format
+  {
+    std::stringstream transformations_json_name;
+    transformations_json_name << global_data->settings.output_prefix << "_"
+                              << shader_module_number_padded
+                              << "_fuzzed.transformations_json";
+
+    std::string json_string;
+    auto json_options = google::protobuf::util::JsonPrintOptions();
+    json_options.add_whitespace = true;
+
+    auto json_generation_status = google::protobuf::util::MessageToJsonString(
+        transformation_sequence, &json_string, json_options);
+
+    if (json_generation_status == google::protobuf::util::Status::OK) {
+      std::ofstream transformations_json_file(transformations_json_name.str());
+      transformations_json_file << json_string;
     }
   }
+
   return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
+    VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data = global_data->device_map.get(device_key(device));
+
+  // Fuzzing the provided shader will either yield an empty vector - if
+  // something went wrong - or a vector whose contents is the fuzzed shader
+  // binary.
+  std::vector<uint32_t> fuzzed = TryFuzzingShader(pCreateInfo, global_data);
+
+  // If we did not succeed in fuzzing the shader, just call the original
+  // function.
+  if (fuzzed.empty()) {
+    return device_data->vkCreateShaderModule(device, pCreateInfo, pAllocator,
+                                             pShaderModule);
+  }
+
+  // We succeeded in fuzzing the shader, so pass on a pointer to a new
+  // VkShaderModuleCreateInfo object identical to the original, except with
+  // the fuzzed shader data.
+  VkShaderModuleCreateInfo fuzzed_shader_module_create_info{
+      pCreateInfo->sType,  // sType
+      pCreateInfo->pNext,  // pNext
+      pCreateInfo->flags,  // flags
+      fuzzed.size() * 4,   // codeSize
+      fuzzed.data(),       // pCode
+  };
+
+  // Call the original function with our create info.
+  return device_data->vkCreateShaderModule(
+      device, &fuzzed_shader_module_create_info, pAllocator, pShaderModule);
 }
 
 // The following functions are standard Vulkan functions that most Vulkan layers
@@ -259,7 +420,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
     VkExtensionProperties* /*pProperties*/) {
   DEBUG_LOG("vkEnumerateInstanceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     return VK_ERROR_LAYER_NOT_PRESENT;
   }
   *pPropertyCount = 0;
@@ -274,11 +435,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     uint32_t* pPropertyCount, VkExtensionProperties* pProperties) {
   DEBUG_LOG("vkEnumerateDeviceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     DEBUG_ASSERT(physicalDevice);
 
     InstanceData* instance_data =
-        get_global_data()->instance_map.get(instance_key(physicalDevice));
+        GetGlobalData()->instance_map.get(instance_key(physicalDevice));
 
     return instance_data->vkEnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
@@ -296,7 +457,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     const VkAllocationCallbacks* pAllocator, VkInstance* pInstance) {
   DEBUG_LOG("vkCreateInstance");
 
-  init_settings_if_needed();
+  InitSettingsIfNeeded();
 
   // Get the layer instance create info, which we need so we can:
   // (a) obtain the next GetInstanceProcAddr function and;
@@ -352,7 +513,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
-  get_global_data()->instance_map.put(instance_key(*pInstance), instance_data);
+  GetGlobalData()->instance_map.put(instance_key(*pInstance), instance_data);
 
   return result;
 }
@@ -388,7 +549,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // we can pass the correct VkInstance.
 
   InstanceData* instance_data =
-      get_global_data()->instance_map.get(instance_key(physicalDevice));
+      GetGlobalData()->instance_map.get(instance_key(physicalDevice));
 
   // Use next_get_instance_proc_address to get vkCreateDevice.
   auto vkCreateDevice =
@@ -426,13 +587,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   }
 
   HANDLE(vkGetDeviceProcAddr)
-  HANDLE(vkQueuePresentKHR)
+  HANDLE(vkCreateShaderModule)
 
 #undef HANDLE
 
   DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
 
-  get_global_data()->device_map.put(device_key(*pDevice), device_data);
+  GetGlobalData()->device_map.put(device_key(*pDevice), device_data);
 
   return result;
 }
@@ -456,7 +617,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   HANDLE(vkGetDeviceProcAddr)  // Self-reference.
 
   // Other device functions that this layer intercepts:
-  HANDLE(vkQueuePresentKHR)
+  HANDLE(vkCreateShaderModule)
 
 #undef HANDLE
 
@@ -468,7 +629,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // intercepting. We must have already intercepted the creation of the
   // device and so we have the appropriate function pointer for the next
   // vkGetDeviceProcAddr. We call the next layer in the chain.
-  return get_global_data()
+  return GetGlobalData()
       ->device_map.get(device_key(device))
       ->vkGetDeviceProcAddr(device, pName);
 }
@@ -517,13 +678,13 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   // intercepted the creation of the instance and so we have the function
   // pointer for the next vkGetInstanceProcAddr. We call the next layer in the
   // chain.
-  return get_global_data()
+  return GetGlobalData()
       ->instance_map.get(instance_key(instance))
       ->vkGetInstanceProcAddr(instance, pName);
 }
 
 }  // namespace
-}  // namespace gf_layers::frame_counter_layer
+}  // namespace gf_layers::shader_fuzzer_layer
 
 //
 // Exported functions.
@@ -536,19 +697,19 @@ extern "C" {
 #pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
-VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
+VkLayer_GF_shader_fuzzerNegotiateLoaderLayerInterfaceVersion(
     VkNegotiateLayerInterface* pVersionStruct) {
   DEBUG_LOG(
       "Entry point: "
-      "VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion");
+      "VkLayer_GF_shader_fuzzerNegotiateLoaderLayerInterfaceVersion");
 
   DEBUG_ASSERT(pVersionStruct);
   DEBUG_ASSERT(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
 
   pVersionStruct->pfnGetInstanceProcAddr =
-      gf_layers::frame_counter_layer::vkGetInstanceProcAddr;
+      gf_layers::shader_fuzzer_layer::vkGetInstanceProcAddr;
   pVersionStruct->pfnGetDeviceProcAddr =
-      gf_layers::frame_counter_layer::vkGetDeviceProcAddr;
+      gf_layers::shader_fuzzer_layer::vkGetDeviceProcAddr;
   pVersionStruct->pfnGetPhysicalDeviceProcAddr = nullptr;
 
   if (pVersionStruct->loaderLayerInterfaceVersion >
@@ -561,18 +722,18 @@ VkLayer_GF_frame_counterNegotiateLoaderLayerInterfaceVersion(
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-VkLayer_GF_frame_counterGetInstanceProcAddr(VkInstance instance,
+VkLayer_GF_shader_fuzzerGetInstanceProcAddr(VkInstance instance,
                                             const char* pName) {
-  DEBUG_LOG("Entry point: VkLayer_GF_frame_counterGetInstanceProcAddr");
+  DEBUG_LOG("Entry point: VkLayer_GF_shader_fuzzerGetInstanceProcAddr");
 
-  return gf_layers::frame_counter_layer::vkGetInstanceProcAddr(instance, pName);
+  return gf_layers::shader_fuzzer_layer::vkGetInstanceProcAddr(instance, pName);
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-VkLayer_GF_frame_counterGetDeviceProcAddr(VkDevice device, const char* pName) {
-  DEBUG_LOG("Entry point: VkLayer_GF_frame_counterGetDeviceProcAddr");
+VkLayer_GF_shader_fuzzerGetDeviceProcAddr(VkDevice device, const char* pName) {
+  DEBUG_LOG("Entry point: VkLayer_GF_shader_fuzzerGetDeviceProcAddr");
 
-  return gf_layers::frame_counter_layer::vkGetDeviceProcAddr(device, pName);
+  return gf_layers::shader_fuzzer_layer::vkGetDeviceProcAddr(device, pName);
 }
 
 #if defined(__ANDROID__)
@@ -582,7 +743,7 @@ vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount,
                                    VkLayerProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateInstanceLayerProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateInstanceLayerProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateInstanceLayerProperties(
       pPropertyCount, pProperties);
 }
 
@@ -591,7 +752,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
     VkLayerProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateDeviceLayerProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateDeviceLayerProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateDeviceLayerProperties(
       physicalDevice, pPropertyCount, pProperties);
 }
 
@@ -601,7 +762,7 @@ vkEnumerateInstanceExtensionProperties(const char* pLayerName,
                                        VkExtensionProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateInstanceExtensionProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateInstanceExtensionProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateInstanceExtensionProperties(
       pLayerName, pPropertyCount, pProperties);
 }
 
@@ -612,7 +773,7 @@ vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
                                      VkExtensionProperties* pProperties) {
   DEBUG_LOG("Entry point: vkEnumerateDeviceExtensionProperties");
 
-  return gf_layers::frame_counter_layer::vkEnumerateDeviceExtensionProperties(
+  return gf_layers::shader_fuzzer_layer::vkEnumerateDeviceExtensionProperties(
       physicalDevice, pLayerName, pPropertyCount, pProperties);
 }
 

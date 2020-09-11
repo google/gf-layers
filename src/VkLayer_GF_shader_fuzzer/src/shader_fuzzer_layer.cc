@@ -160,13 +160,13 @@ struct GlobalData {
 GlobalData global_data_;  // NOLINT(cert-err58-cpp)
 #pragma clang diagnostic pop
 
-GlobalData* GetGlobaData() { return &global_data_; }
+GlobalData* GetGlobalData() { return &global_data_; }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "VkLayer_GF_shader_fuzzer",     // layerName
     VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
     1,                              // implementationVersion
-    "Frame counter layer.",         // description
+    "Shader fuzzer layer.",         // description
 }}};
 
 bool IsThisLayer(const char* pLayerName) {
@@ -175,9 +175,9 @@ bool IsThisLayer(const char* pLayerName) {
 }
 
 void InitSettingsIfNeeded() {
-  gf_layers::ScopedLock lock(GetGlobaData()->settings_mutex);
+  gf_layers::ScopedLock lock(GetGlobalData()->settings_mutex);
 
-  ShaderFuzzerLayerSettings& settings = GetGlobaData()->settings;
+  ShaderFuzzerLayerSettings& settings = GetGlobalData()->settings;
 
   if (!settings.init) {
     get_setting_string("VkLayer_GF_shader_fuzzer_OUTPUT_PREFIX",
@@ -341,7 +341,7 @@ std::vector<uint32_t> TryFuzzingShader(
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
     VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
     const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule) {
-  GlobalData* global_data = GetGlobaData();
+  GlobalData* global_data = GetGlobalData();
   DeviceData* device_data = global_data->device_map.get(device_key(device));
 
   // Fuzzing the provided shader will either yield an empty vector - if
@@ -439,7 +439,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     DEBUG_ASSERT(physicalDevice);
 
     InstanceData* instance_data =
-        GetGlobaData()->instance_map.get(instance_key(physicalDevice));
+        GetGlobalData()->instance_map.get(instance_key(physicalDevice));
 
     return instance_data->vkEnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
@@ -513,7 +513,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
-  GetGlobaData()->instance_map.put(instance_key(*pInstance), instance_data);
+  GetGlobalData()->instance_map.put(instance_key(*pInstance), instance_data);
 
   return result;
 }
@@ -549,7 +549,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // we can pass the correct VkInstance.
 
   InstanceData* instance_data =
-      GetGlobaData()->instance_map.get(instance_key(physicalDevice));
+      GetGlobalData()->instance_map.get(instance_key(physicalDevice));
 
   // Use next_get_instance_proc_address to get vkCreateDevice.
   auto vkCreateDevice =
@@ -593,7 +593,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
 
-  GetGlobaData()->device_map.put(device_key(*pDevice), device_data);
+  GetGlobalData()->device_map.put(device_key(*pDevice), device_data);
 
   return result;
 }
@@ -629,7 +629,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // intercepting. We must have already intercepted the creation of the
   // device and so we have the appropriate function pointer for the next
   // vkGetDeviceProcAddr. We call the next layer in the chain.
-  return GetGlobaData()
+  return GetGlobalData()
       ->device_map.get(device_key(device))
       ->vkGetDeviceProcAddr(device, pName);
 }
@@ -678,7 +678,7 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   // intercepted the creation of the instance and so we have the function
   // pointer for the next vkGetInstanceProcAddr. We call the next layer in the
   // chain.
-  return GetGlobaData()
+  return GetGlobalData()
       ->instance_map.get(instance_key(instance))
       ->vkGetInstanceProcAddr(instance, pName);
 }

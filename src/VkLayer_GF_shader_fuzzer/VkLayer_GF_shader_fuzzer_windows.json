@@ -7,7 +7,7 @@
       "library_path": ".\\VkLayer_GF_shader_fuzzer.dll",
       "api_version" : "1.1.130",
       "implementation_version" : "1",
-      "description" : "Frame counter layer.",
+      "description" : "Shader fuzzer layer.",
       "functions": {
         "vkGetDeviceProcAddr": "VkLayer_GF_shader_fuzzerGetDeviceProcAddr",
         "vkGetInstanceProcAddr": "VkLayer_GF_shader_fuzzerGetInstanceProcAddr",

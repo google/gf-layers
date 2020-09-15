@@ -68,14 +68,13 @@ struct DeviceData {
 
   // Tracked device data:
 
-  std::shared_ptr<
-      ProtectedMap<VkCommandBuffer, std::vector<std::shared_ptr<Cmd>>>>
-      command_buffers = std::make_shared<
-          ProtectedMap<VkCommandBuffer, std::vector<std::shared_ptr<Cmd>>>>();
+  ProtectedMap<VkCommandBuffer, std::vector<std::unique_ptr<Cmd>>>
+      command_buffers;
 };
 
 using InstanceMap = gf_layers::ProtectedTinyStaleMap<void*, InstanceData>;
-using DeviceMap = gf_layers::ProtectedTinyStaleMap<void*, DeviceData>;
+using DeviceMap =
+    gf_layers::ProtectedTinyStaleMap<void*, std::unique_ptr<DeviceData>>;
 
 namespace {
 
@@ -163,20 +162,17 @@ void InitSettingsIfNeeded() {
   }
 }
 
-//
 // Adds the given vulkan command buffer command to the list of tracked commands.
 // Creates a new list of commands for the given command buffer if it doesn't
 // already exist. Tracked commands will be parsed later when the command buffer
 // is submitted via vkQueueSubmit function.
-//
-void AddCommand(const DeviceData& device_data, VkCommandBuffer command_buffer,
+void AddCommand(DeviceData* device_data, VkCommandBuffer command_buffer,
                 std::unique_ptr<Cmd> command) {
   // Check if the command list already exists.
-  if (device_data.command_buffers->count(command_buffer) == 0) {
-    std::vector<std::shared_ptr<Cmd>> empty_cmds;
-    device_data.command_buffers->put(command_buffer, std::move(empty_cmds));
+  if (device_data->command_buffers.count(command_buffer) == 0) {
+    device_data->command_buffers.put(command_buffer, {});
   }
-  device_data.command_buffers->get(command_buffer)
+  device_data->command_buffers.get(command_buffer)
       ->push_back(std::move(command));
 }
 
@@ -270,12 +266,12 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
     const VkRenderPassBeginInfo* pRenderPassBegin, VkSubpassContents contents) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer));
+      global_data->device_map.get(device_key(commandBuffer))->get();
 
   // Call the original function.
   device_data->vkCmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
 
-  AddCommand(*device_data, commandBuffer,
+  AddCommand(device_data, commandBuffer,
              std::make_unique<CmdBeginRenderPass>(pRenderPassBegin, contents));
 }
 
@@ -287,11 +283,11 @@ vkCmdBindPipeline(VkCommandBuffer commandBuffer,
                   VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer));
+      global_data->device_map.get(device_key(commandBuffer))->get();
 
   device_data->vkCmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
 
-  AddCommand(*device_data, commandBuffer,
+  AddCommand(device_data, commandBuffer,
              std::make_unique<CmdBindPipeline>(pipelineBindPoint, pipeline));
 }
 
@@ -305,13 +301,13 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer,
                                      uint32_t firstInstance) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer));
+      global_data->device_map.get(device_key(commandBuffer))->get();
 
   // Call the original function.
   device_data->vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex,
                          firstInstance);
 
-  AddCommand(*device_data, commandBuffer,
+  AddCommand(device_data, commandBuffer,
              std::make_unique<CmdDraw>(vertexCount, instanceCount, firstVertex,
                                        firstInstance));
 }
@@ -324,14 +320,14 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
     uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer));
+      global_data->device_map.get(device_key(commandBuffer))->get();
 
   // Call the original function.
   device_data->vkCmdDrawIndexed(commandBuffer, indexCount, instanceCount,
                                 firstIndex, vertexOffset, firstInstance);
 
   AddCommand(
-      *device_data, commandBuffer,
+      device_data, commandBuffer,
       std::make_unique<CmdDrawIndexed>(indexCount, instanceCount, firstIndex,
                                        vertexOffset, firstInstance));
 }
@@ -347,7 +343,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
                                              VkSubmitInfo const* pSubmits,
                                              VkFence fence) {
   GlobalData* global_data = GetGlobalData();
-  DeviceData* device_data = global_data->device_map.get(device_key(queue));
+  DeviceData* device_data =
+      global_data->device_map.get(device_key(queue))->get();
 
   for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
     for (uint32_t cmd_buffer_idx = 0;
@@ -360,17 +357,17 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
 
       // Ignore command buffers that are not tracked, i.e. command buffers that
       // doesn't contain any interesting commands.
-      if (device_data->command_buffers->count(command_buffer_handle) == 0) {
+      if (device_data->command_buffers.count(command_buffer_handle) == 0) {
         continue;
       }
-      DEBUG_ASSERT(device_data->command_buffers->count(command_buffer_handle));
+      DEBUG_ASSERT(device_data->command_buffers.count(command_buffer_handle));
 
       DrawCallStateTracker draw_call_state = {};
       draw_call_state.queue = queue;
       draw_call_state.command_buffer_handle = command_buffer_handle;
 
       auto* command_buffer =
-          device_data->command_buffers->get(command_buffer_handle);
+          device_data->command_buffers.get(command_buffer_handle);
       for (auto& cmd : *command_buffer) {
         if (auto* cmd_begin_renderpass = cmd->AsBeginRenderPass()) {
           draw_call_state.current_render_pass =
@@ -607,14 +604,15 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // Initialize our DeviceData, including all device function pointers that
   // we will need.
 
-  DeviceData device_data{};
-  device_data.device = *pDevice;
-  device_data.instance_data = instance_data;
+  std::unique_ptr<DeviceData> device_data = std::make_unique<DeviceData>();
+
+  device_data->device = *pDevice;
+  device_data->instance_data = instance_data;
 
 #define HANDLE(func)                                  \
-  device_data.func = reinterpret_cast<PFN_##func>(    \
+  device_data->func = reinterpret_cast<PFN_##func>(   \
       next_get_device_proc_address(*pDevice, #func)); \
-  if (!device_data.func) {                            \
+  if (!device_data->func) {                           \
     return VK_ERROR_INITIALIZATION_FAILED;            \
   }
 
@@ -627,9 +625,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
 #undef HANDLE
 
-  DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
+  DEBUG_ASSERT(next_get_device_proc_address ==
+               device_data->vkGetDeviceProcAddr);
 
-  GetGlobalData()->device_map.put(device_key(*pDevice), device_data);
+  GetGlobalData()->device_map.put(device_key(*pDevice), std::move(device_data));
 
   return result;
 }
@@ -670,6 +669,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // vkGetDeviceProcAddr. We call the next layer in the chain.
   return GetGlobalData()
       ->device_map.get(device_key(device))
+      ->get()
       ->vkGetDeviceProcAddr(device, pName);
 }
 

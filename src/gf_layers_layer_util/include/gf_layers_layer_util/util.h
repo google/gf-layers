@@ -94,7 +94,7 @@ class ProtectedTinyStaleMap {
 
   void put(KeyType key, ValueType value) {
     ScopedLock lock(mutex_);
-    map_[key] = value;
+    map_[key] = std::move(value);
   }
 
  private:
@@ -113,9 +113,8 @@ class ProtectedMap {
   // Warning: we currently require the values to have pointer stability.
   // This is guaranteed for std::unordered_map.
   using InternalMapType = MapTemplate<KeyType, ValueType>;
-  using ThreadLocalCacheType = std::pair<KeyType, ValueType*>;
 
-  size_t count(KeyType key) {
+  size_t count(KeyType key) const {
     ScopedLock lock(mutex_);
     return map_.count(key);
   }
@@ -130,9 +129,9 @@ class ProtectedMap {
     return result;
   }
 
-  bool put(KeyType key, ValueType value) {
+  bool put(const KeyType key, ValueType value) {
     ScopedLock lock(mutex_);
-    return map_.insert({key, value}).second;
+    return map_.emplace(key, std::move(value)).second;
   }
 
   InternalMapType* access(ScopedLock* lock) {
@@ -143,7 +142,7 @@ class ProtectedMap {
 
  private:
   InternalMapType map_;
-  MutexType mutex_;
+  mutable MutexType mutex_;
 };
 
 // The following are dispatchable handles:

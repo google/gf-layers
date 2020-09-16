@@ -27,12 +27,59 @@
 #include <utility>
 #include <vector>
 
+#include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
-#include "vk_layer_amber_scoop/vulkan_commands.h"
 
 namespace gf_layers::amber_scoop_layer {
+
+// This class is used to keep track of a command buffer. This class stores
+// commands recorded to a command buffer and keeps track when the command buffer
+// has been submitted. Also keeps track if the command buffer being tracked
+// contains any draw calls. The class is not thread-safe, but it shouldn't
+// matter because Vulkan spec requires Vulkan applications to record commands
+// without races.
+class CommandBufferTracker {
+ public:
+  // Add command to the command list.
+  void AddCommand(std::unique_ptr<Cmd> cmd) {
+    // Command buffer must be reset if it has been submitted and new commands
+    // are being added to it, so we reset our command buffer tracker.
+    if (is_submitted_) {
+      command_list.clear();
+      is_submitted_ = false;
+      contains_draw_calls_ = false;
+    }
+    // Set the flag if the command being added is a draw call.
+    if (cmd->AsDraw() != nullptr || cmd->AsDrawIndexed() != nullptr) {
+      contains_draw_calls_ = true;
+    }
+    command_list.push_back(std::move(cmd));
+  }
+
+  // Return true if the command list contains a draw call.
+  [[nodiscard]] bool ContainsDrawCalls() const { return contains_draw_calls_; }
+
+  // Get reference to the list of captured commands. The list can't be modified
+  // directly. Use AddCommand() to add append the list.
+  [[nodiscard]] const std::vector<std::unique_ptr<Cmd>>* GetCommandList()
+      const {
+    return &command_list;
+  }
+
+  // Mark the command buffer to be submitted. The flag is reset automatically if
+  // a new command is added after the command buffer has been submitted.
+  void SetSubmitted() { is_submitted_ = true; }
+
+ private:
+  // Flag to tell if the command buffer has been submitted.
+  bool is_submitted_ = false;
+  // Flag to tell if the command list contains any draw calls.
+  bool contains_draw_calls_ = false;
+  // List of tracked commands.
+  std::vector<std::unique_ptr<Cmd>> command_list = {};
+};
 
 struct InstanceData {
   VkInstance instance;
@@ -68,8 +115,7 @@ struct DeviceData {
 
   // Tracked device data:
 
-  ProtectedMap<VkCommandBuffer, std::vector<std::unique_ptr<Cmd>>>
-      command_buffers;
+  ProtectedMap<VkCommandBuffer, CommandBufferTracker> command_buffers;
 };
 
 using InstanceMap = gf_layers::ProtectedTinyStaleMap<void*, InstanceData>;
@@ -81,15 +127,22 @@ namespace {
 // Read-only once initialized.
 struct AmberScoopLayerSettings {
   bool init = false;
+  // Number of the first draw call to be captured. Can be set via env variable
+  // "VkLayer_GF_amber_scoop_START_DRAW_CALL" or Android property
+  // "debug.gf.as.start_draw_call"
   uint64_t start_draw_call = 0;
-  uint64_t draw_call_count = 1;
+  // Number of the last draw call to be captured. Last draw call is
+  // "start_draw_call" + "VkLayer_GF_amber_scoop_DRAW_CALL_COUNT".
   uint64_t last_draw_call = 0;
+  // Prefix used in output file names. Can be set via env variable
+  // "VkLayer_GF_amber_scoop_OUTPUT_FILE_PREFIX"
   std::string output_file_prefix = "amber_scoop_output";
 };
 
 struct GlobalData {
   InstanceMap instance_map;
   DeviceMap device_map;
+  // Draw call counter used to detect the draw call to be captured.
   std::atomic<uint64_t> current_draw_call = {};
 
   // In vkCreateInstance, we initialize |settings| by reading environment
@@ -101,16 +154,20 @@ struct GlobalData {
 };
 
 // Draw call state tracker is used to store the state of a draw call while
-// parsing the command buffers in vkQueueSubmit(...) -function.
+// parsing the command buffers in vkQueueSubmit(...) -function. One draw call
+// state tracker is created for each command buffer containing draw calls.
 struct DrawCallStateTracker {
-  VkPipeline graphics_pipeline = nullptr;
-  VkRenderPassBeginInfo* current_render_pass = nullptr;
-  uint32_t current_subpass = 0;
   VkCommandBuffer command_buffer_handle;
   VkQueue queue;
+  VkRenderPassBeginInfo* current_render_pass = nullptr;
+  uint32_t current_subpass = 0;
+  VkPipeline graphics_pipeline;
   std::vector<uint8_t> push_constant_data;
-
+  // Map of vertex buffer bindings. Key is the binding number and value is the
+  // buffer handle.
   std::unordered_map<uint32_t, VkBuffer> bound_vertex_buffers;
+  // Map of vertex buffer offsets. Key is the binding number of the buffer and
+  // value is the vertex buffer offset.
   std::unordered_map<uint32_t, VkDeviceSize> vertex_buffer_offsets;
 };
 
@@ -147,47 +204,49 @@ void InitSettingsIfNeeded() {
   AmberScoopLayerSettings& settings = GetGlobalData()->settings;
 
   if (!settings.init) {
+    uint64_t draw_call_count = 1;
     get_setting_uint64("VkLayer_GF_amber_scoop_START_DRAW_CALL",
                        "debug.gf.as.start_draw_call",
                        &settings.start_draw_call);
     get_setting_uint64("VkLayer_GF_amber_scoop_DRAW_CALL_COUNT",
-                       "debug.gf.as.draw_call_count",
-                       &settings.draw_call_count);
+                       "debug.gf.as.draw_call_count", &draw_call_count);
     get_setting_string("VkLayer_GF_amber_scoop_OUTPUT_FILE_PREFIX",
                        "debug.gf.as.output_file_prefix",
                        &settings.output_file_prefix);
-    settings.last_draw_call =
-        settings.start_draw_call + settings.draw_call_count;
+    settings.last_draw_call = settings.start_draw_call + draw_call_count;
     settings.init = true;
   }
 }
 
-// Adds the given vulkan command buffer command to the list of tracked commands.
+// Adds the given Vulkan command buffer command to the list of tracked commands.
 // Creates a new list of commands for the given command buffer if it doesn't
 // already exist. Tracked commands will be parsed later when the command buffer
 // is submitted via vkQueueSubmit function.
 void AddCommand(DeviceData* device_data, VkCommandBuffer command_buffer,
                 std::unique_ptr<Cmd> command) {
-  // Check if the command list already exists.
-  if (device_data->command_buffers.count(command_buffer) == 0) {
-    device_data->command_buffers.put(command_buffer, {});
+  auto* tracked_command_buffer =
+      device_data->command_buffers.get(command_buffer);
+  // Check if the command buffer isn't tracked and start tracking if it isn't
+  // tracked.
+  if (tracked_command_buffer == nullptr) {
+    device_data->command_buffers.put(command_buffer, CommandBufferTracker());
+    tracked_command_buffer = device_data->command_buffers.get(command_buffer);
   }
-  device_data->command_buffers.get(command_buffer)
-      ->push_back(std::move(command));
+  tracked_command_buffer->AddCommand(std::move(command));
 }
 
 // This function handles all of the draw calls. An Amber file will be generated
 // from the draw call if the draw call is set to be captured via settings.
 //
 // TODO(ilkkasaa): This function is going to be huge. Consider making a separate
-// file for handling draw calls / creating amber files.
+//  file for handling draw calls / creating amber files.
 void HandleDrawCall(const DrawCallStateTracker& draw_call_state_tracker,
                     const DeviceData& device_data, uint32_t first_index,
                     uint32_t index_count, uint32_t first_vertex,
                     uint32_t vertex_count, uint32_t first_instance,
                     uint32_t instance_count) {
   // Silence unused parameter warnings.
-  // TODO(ilkkasaa) remove these.
+  // TODO(ilkkasaa) remove these when they are used.
   (void)device_data;
   (void)first_vertex;
   (void)vertex_count;
@@ -213,8 +272,8 @@ void HandleDrawCall(const DrawCallStateTracker& draw_call_state_tracker,
 
   buffer_declaration_str << "BUFFER ...";
 
-  std::string amber_file_name =
-      global_data->settings.output_file_prefix + ".amber";
+  std::string amber_file_name = global_data->settings.output_file_prefix + "_" +
+                                std::to_string(current_draw_call) + ".amber";
 
   std::ofstream amber_file;
   amber_file.open(amber_file_name, std::ios::trunc | std::ios::out);
@@ -285,6 +344,7 @@ vkCmdBindPipeline(VkCommandBuffer commandBuffer,
   DeviceData* device_data =
       global_data->device_map.get(device_key(commandBuffer))->get();
 
+  // Call the original function.
   device_data->vkCmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
 
   AddCommand(device_data, commandBuffer,
@@ -336,17 +396,24 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
 
 //
 // Our vkQueueSubmit function.
-// Goes through all tracked commands in all of the submitted command buffers.
 //
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
                                              uint32_t submitCount,
                                              VkSubmitInfo const* pSubmits,
                                              VkFence fence) {
+  // Go through all tracked commands in all of the submitted command buffers.
+  // Every command buffer containing a draw call will be parsed command by
+  // command to get the states of every resource required by a draw call.
+  // If the draw call is requested to be captured, an Amber file will be
+  // generated from it.
+
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
       global_data->device_map.get(device_key(queue))->get();
 
+  // Go through each queue submit.
   for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
+    // Go through all command buffers in each submit.
     for (uint32_t cmd_buffer_idx = 0;
          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
          cmd_buffer_idx < pSubmits[submit_idx].commandBufferCount;
@@ -355,39 +422,49 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
           // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
           pSubmits[submit_idx].pCommandBuffers[cmd_buffer_idx];
 
-      // Ignore command buffers that are not tracked, i.e. command buffers that
-      // doesn't contain any interesting commands.
-      if (device_data->command_buffers.count(command_buffer_handle) == 0) {
-        continue;
-      }
-      DEBUG_ASSERT(device_data->command_buffers.count(command_buffer_handle));
-
-      DrawCallStateTracker draw_call_state = {};
-      draw_call_state.queue = queue;
-      draw_call_state.command_buffer_handle = command_buffer_handle;
-
       auto* command_buffer =
           device_data->command_buffers.get(command_buffer_handle);
-      for (auto& cmd : *command_buffer) {
+
+      // Ignore command buffers that are not tracked, i.e. command buffers that
+      // don't contain any interesting commands.
+      if (command_buffer == nullptr) {
+        continue;
+      }
+      // Mark the command buffer as submitted.
+      command_buffer->SetSubmitted();
+
+      // Skip all command buffers that don't contain any draw calls.
+      if (!command_buffer->ContainsDrawCalls()) {
+        continue;
+      }
+
+      // Create a new draw call state tracker. Tracker stores the state of the
+      // command buffer being processed, i.e. what pipeline is bound, push
+      // constant values, bound vertex and index buffers, etc. This information
+      // is needed when a draw call needs to be processed to an Amber file.
+      DrawCallStateTracker draw_call_state = {};
+      draw_call_state.command_buffer_handle = command_buffer_handle;
+      draw_call_state.queue = queue;
+
+      for (const auto& cmd : *command_buffer->GetCommandList()) {
         if (auto* cmd_begin_renderpass = cmd->AsBeginRenderPass()) {
           draw_call_state.current_render_pass =
-              &cmd_begin_renderpass->render_pass_begin_;
+              &cmd_begin_renderpass->render_pass_begin;
           draw_call_state.current_subpass = 0;
         } else if (auto* cmd_draw = cmd->AsDraw()) {
           HandleDrawCall(draw_call_state, *device_data, 0, 0,
-                         cmd_draw->first_vertex_, cmd_draw->vertex_count_,
-                         cmd_draw->first_instance_, cmd_draw->instance_count_);
+                         cmd_draw->first_vertex, cmd_draw->vertex_count,
+                         cmd_draw->first_instance, cmd_draw->instance_count);
         } else if (auto* cmd_draw_indexed = cmd->AsDrawIndexed()) {
-          HandleDrawCall(draw_call_state, *device_data,
-                         cmd_draw_indexed->first_index_,
-                         cmd_draw_indexed->index_count_, 0, 0,
-                         cmd_draw_indexed->first_index_,
-                         cmd_draw_indexed->instance_count_);
-        } else if (auto* cmdBindPipeline = cmd->AsBindPipeline()) {
+          HandleDrawCall(
+              draw_call_state, *device_data, cmd_draw_indexed->first_index,
+              cmd_draw_indexed->index_count, 0, 0,
+              cmd_draw_indexed->first_index, cmd_draw_indexed->instance_count);
+        } else if (auto* cmd_bind_pipeline = cmd->AsBindPipeline()) {
           // Currently we are interested in graphics pipelines only.
-          if (cmdBindPipeline->pipeline_bind_point_ ==
+          if (cmd_bind_pipeline->pipeline_bind_point ==
               VK_PIPELINE_BIND_POINT_GRAPHICS) {
-            draw_call_state.graphics_pipeline = cmdBindPipeline->pipeline_;
+            draw_call_state.graphics_pipeline = cmd_bind_pipeline->pipeline;
           }
         }
       }

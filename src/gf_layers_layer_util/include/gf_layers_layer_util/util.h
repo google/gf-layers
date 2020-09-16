@@ -18,7 +18,6 @@
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 
-#include <cstddef>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -113,11 +112,6 @@ class ProtectedMap {
   // Warning: we currently require the values to have pointer stability.
   // This is guaranteed for std::unordered_map.
   using InternalMapType = MapTemplate<KeyType, ValueType>;
-
-  size_t count(KeyType key) const {
-    ScopedLock lock(mutex_);
-    return map_.count(key);
-  }
 
   ValueType* get(KeyType key) {
     ScopedLock lock(mutex_);

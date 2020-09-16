@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "vk_layer_amber_scoop/vulkan_commands.h"
+#include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 
 namespace gf_layers::amber_scoop_layer {
 

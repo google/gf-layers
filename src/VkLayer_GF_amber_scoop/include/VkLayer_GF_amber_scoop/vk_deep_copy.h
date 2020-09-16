@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef VK_LAYER_AMBER_SCOOP_VK_DEEP_COPY_H
-#define VK_LAYER_AMBER_SCOOP_VK_DEEP_COPY_H
+#ifndef VKLAYER_GF_AMBER_SCOOP_VK_DEEP_COPY_H
+#define VKLAYER_GF_AMBER_SCOOP_VK_DEEP_COPY_H
 
 #include <vulkan/vulkan.h>
 
@@ -21,6 +21,10 @@
 
 namespace gf_layers::amber_scoop_layer {
 
+// Allocates a new array of type T with size of "num_elements" and copies data
+// from the array "p_data" starting from element with the given offset. The
+// allocated memory is not freed automatically. Use "delete[]" to free the
+// memory.
 template <typename T>
 T* CopyArray(T const* p_data, uint32_t num_elements, uint32_t offset) {
   if (p_data == nullptr) {
@@ -35,16 +39,29 @@ T* CopyArray(T const* p_data, uint32_t num_elements, uint32_t offset) {
   return result;
 }
 
+// Shortcut for CopyArray with zero offset.
 template <typename T>
 T* CopyArray(T const* p_data, uint32_t num_elements) {
   return CopyArray(p_data, num_elements, 0);
 }
 
+// Commands for making a deep / recursive copy of Vulkan structs. Each DeepCopy
+// function has associated DeepDelete function for freeing the memory in the
+// DeepCopy. Typically these functions are called from constructors and
+// destructors of gf_layers::amber_scoop_layer::CmdXXXX structs. See
+// vulkan_commands.h.
+
+// Makes a deep copy of VkRenderPassBeginInfo struct. The allocated memory is
+// not freed automatically. Use DeepDelete(VkRenderPassBeginInfo const*) to
+// recursively free all the allocated memory.
 VkRenderPassBeginInfo DeepCopy(
     VkRenderPassBeginInfo const* p_render_pass_begin_info);
 
+// Recursively deletes all the allocated memory of the given
+// VkRenderPassBeginInfo struct. Should be used only for structs created with
+// associated DeepCopy(...) function.
 void DeepDelete(VkRenderPassBeginInfo const* p_render_pass_begin_info);
 
 }  // namespace gf_layers::amber_scoop_layer
 
-#endif  // VK_LAYER_AMBER_SCOOP_VK_DEEP_COPY_H
+#endif  // VKLAYER_GF_AMBER_SCOOP_VK_DEEP_COPY_H

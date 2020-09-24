@@ -21,7 +21,9 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -70,6 +72,8 @@
 #include "source/fuzz/fuzzer.h"
 #include "source/fuzz/fuzzer_util.h"
 #include "source/fuzz/protobufs/spvtoolsfuzz.pb.h"
+#include "source/fuzz/pseudo_random_generator.h"
+#include "source/fuzz/random_generator.h"
 #include "source/spirv_constant.h"
 #include "spirv-tools/libspirv.h"
 #include "spirv-tools/libspirv.hpp"
@@ -252,24 +256,49 @@ std::vector<uint32_t> TryFuzzingShader(
 
   // Create a fuzzer and the various parameters required for fuzzing.
   spvtools::ValidatorOptions validator_options;
-  spvtools::fuzz::Fuzzer fuzzer(target_env,
-                                static_cast<uint32_t>(shader_module_number),
-                                true, validator_options);
   std::vector<uint32_t> binary_in(
       pCreateInfo->pCode,
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       pCreateInfo->pCode + code_size_in_words);
 
-  std::vector<uint32_t> result;
   spvtools::fuzz::protobufs::FactSequence no_facts;
   std::vector<spvtools::fuzz::fuzzerutil::ModuleSupplier> no_donors;
-  spvtools::fuzz::protobufs::TransformationSequence transformation_sequence;
 
-  // Fuzz the shader into |result|.
-  auto fuzzer_result_status = fuzzer.Run(binary_in, no_facts, no_donors,
-                                         &result, &transformation_sequence);
+  spvtools::MessageConsumer message_consumer =
+      [](spv_message_level_t level, const char* source,
+         const spv_position_t& position, const char* message) {
+        (void)source;  // This parameter is deliberately unused.
+        switch (level) {
+          case SPV_MSG_FATAL:
+          case SPV_MSG_INTERNAL_ERROR:
+          case SPV_MSG_ERROR:
+            LOG("error: line %zu: %s", position.index, message);
+            break;
+          case SPV_MSG_WARNING:
+            LOG("warning: line %zu: %s", position.index, message);
+            break;
+          case SPV_MSG_INFO:
+            LOG("info: line %zu: %s", position.index, message);
+            break;
+          case SPV_MSG_DEBUG:
+            LOG("debug: line %zu: %s", position.index, message);
+            break;
+        }
+      };
 
-  if (fuzzer_result_status !=
+  // Fuzz the shader.
+  auto fuzzer_result =
+      spvtools::fuzz::Fuzzer(
+          target_env, message_consumer, binary_in, no_facts, no_donors,
+          std::make_unique<spvtools::fuzz::PseudoRandomGenerator>(
+              static_cast<uint32_t>(shader_module_number)),
+          false,
+          spvtools::fuzz::Fuzzer::RepeatedPassStrategy::
+              kLoopedWithRecommendations,
+          true, validator_options)
+          .Run();
+
+  if (fuzzer_result.status !=
       spvtools::fuzz::Fuzzer::FuzzerResultStatus::kComplete) {
     LOG("Fuzzing failed.");
     return {};
@@ -301,7 +330,8 @@ std::vector<uint32_t> TryFuzzingShader(
     fuzzed_shader_binary_name << global_data->settings.output_prefix << "_"
                               << shader_module_number_padded << "_fuzzed.spv";
     WriteFile<uint32_t>(fuzzed_shader_binary_name.str().c_str(), "wb",
-                        result.data(), result.size());
+                        fuzzer_result.transformed_binary.data(),
+                        fuzzer_result.transformed_binary.size());
   }
 
   // Write out the transformations
@@ -312,7 +342,8 @@ std::vector<uint32_t> TryFuzzingShader(
                          << "_fuzzed.transformations";
     std::ofstream transformations_file(transformations_name.str(),
                                        std::ios::out | std::ios::binary);
-    transformation_sequence.SerializeToOstream(&transformations_file);
+    fuzzer_result.applied_transformations.SerializeToOstream(
+        &transformations_file);
   }
 
   // Write out the transformations in JSON format
@@ -327,7 +358,7 @@ std::vector<uint32_t> TryFuzzingShader(
     json_options.add_whitespace = true;
 
     auto json_generation_status = google::protobuf::util::MessageToJsonString(
-        transformation_sequence, &json_string, json_options);
+        fuzzer_result.applied_transformations, &json_string, json_options);
 
     if (json_generation_status == google::protobuf::util::Status::OK) {
       std::ofstream transformations_json_file(transformations_json_name.str());
@@ -335,8 +366,8 @@ std::vector<uint32_t> TryFuzzingShader(
     }
   }
 
-  return result;
-}
+  return fuzzer_result.transformed_binary;
+}  // namespace
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
     VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,

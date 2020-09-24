@@ -367,7 +367,7 @@ std::vector<uint32_t> TryFuzzingShader(
   }
 
   return fuzzer_result.transformed_binary;
-}  // namespace
+}
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
     VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,

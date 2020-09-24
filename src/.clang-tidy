@@ -14,7 +14,6 @@ Checks: >
   -fuchsia-default-arguments-calls,
   -fuchsia-statically-constructed-objects,
   -mpi-*,
-  -misc-non-private-member-variables-in-classes,
 
 # Some comments for the above:
 

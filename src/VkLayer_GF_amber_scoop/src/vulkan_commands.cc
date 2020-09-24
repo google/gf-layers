@@ -14,26 +14,38 @@
 
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 
-namespace gf_layers::amber_scoop_layer {
+#include <VkLayer_GF_amber_scoop/draw_call_tracker.h>
 
-// At least one of the virtual functions from each of "Cmd*"-class must be
-// defined in this file (instead of the header file) to avoid vtable to be
-// emitted in every translation unit (-Wweak-vtables error).
+namespace gf_layers::amber_scoop_layer {
 
 Cmd::~Cmd() = default;
 
-CmdBeginRenderPass* CmdBeginRenderPass::AsBeginRenderPass() { return this; }
-const CmdBeginRenderPass* CmdBeginRenderPass::AsBeginRenderPass() const {
-  return this;
+void CmdBeginRenderPass::ProcessSubmittedCommand(
+    DrawCallTracker* draw_call_state_tracker) {
+  draw_call_state_tracker->GetDrawCallState()->current_render_pass =
+      &render_pass_begin_;
+  // TODO(ilkkasaa): currently only one subpass is supported.
+  draw_call_state_tracker->GetDrawCallState()->current_subpass = 0;
 }
 
-CmdBindPipeline* CmdBindPipeline::AsBindPipeline() { return this; }
-const CmdBindPipeline* CmdBindPipeline::AsBindPipeline() const { return this; }
+void CmdBindPipeline::ProcessSubmittedCommand(
+    DrawCallTracker* draw_call_state_tracker) {
+  // Currently we are interested in graphics pipelines only.
+  if (pipeline_bind_point_ == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+    draw_call_state_tracker->GetDrawCallState()->graphics_pipeline = pipeline_;
+  }
+}
 
-CmdDraw* CmdDraw::AsDraw() { return this; }
-const CmdDraw* CmdDraw::AsDraw() const { return this; }
+void CmdDraw::ProcessSubmittedCommand(
+    DrawCallTracker* draw_call_state_tracker) {
+  draw_call_state_tracker->HandleDrawCall(0, 0, first_vertex_, vertex_count_,
+                                          first_instance_, instance_count_);
+}
 
-CmdDrawIndexed* CmdDrawIndexed::AsDrawIndexed() { return this; }
-const CmdDrawIndexed* CmdDrawIndexed::AsDrawIndexed() const { return this; }
+void CmdDrawIndexed::ProcessSubmittedCommand(
+    DrawCallTracker* draw_call_state_tracker) {
+  draw_call_state_tracker->HandleDrawCall(first_index_, index_count_, 0, 0,
+                                          first_instance_, instance_count_);
+}
 
 }  // namespace gf_layers::amber_scoop_layer

@@ -21,22 +21,23 @@
 
 #include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
-
 namespace gf_layers::amber_scoop_layer {
 
-struct CmdBeginRenderPass;
-struct CmdBindPipeline;
-struct CmdDraw;
-struct CmdDrawIndexed;
+class DrawCallTracker;
 
-// Cmd is a base for all vkCmdXXXX commands (Vulkan command buffer commands) we
+// These classes contain unused private fields that will be used later. The
+// warning is disable to allow the classes to store all the fields required in
+// the future.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-private-field"
+
+// Cmd is a base for all vkCmdXX commands (Vulkan command buffer commands) we
 // are interested in. The interesting commands include all the commands that may
 // affect somehow the draw command(s) that will be captured.
-struct Cmd {
+class Cmd {
+ public:
   // Types of the interesting commands. Names should be the same as the Vulkan's
-  // equivalent command names: "vkCmdXXX" without the "vkCmd" prefix.
+  // equivalent command names: "vkCmdXX" without the "vkCmd" prefix.
   enum Kind {
     kBeginRenderPass,
     kBindPipeline,
@@ -44,7 +45,7 @@ struct Cmd {
     kDrawIndexed,
   };
 
-  explicit Cmd(Kind kind) : kind(kind) {}
+  explicit Cmd(Kind kind) : kind_(kind) {}
 
   virtual ~Cmd();
 
@@ -54,30 +55,27 @@ struct Cmd {
   Cmd& operator=(const Cmd&) = delete;
   Cmd& operator=(Cmd&&) = delete;
 
-  // A bunch of methods for casting this type to a given type. Returns this if
-  // the cast can be done, nullptr otherwise.
-  // clang-format off
-#define DeclareCastMethod(target)                                              \
-  virtual Cmd##target *As##target() { return nullptr; }                        \
-  virtual const Cmd##target *As##target() const { return nullptr; }
-  DeclareCastMethod(BeginRenderPass)
-  DeclareCastMethod(BindPipeline)
-  DeclareCastMethod(Draw)
-  DeclareCastMethod(DrawIndexed)
-#undef DeclareCastMethod
+  // Returns the command type.
+  [[nodiscard]] Kind GetKind() const { return kind_; }
 
-  Kind kind;
+  // Overriding function should either update the given draw call tracker (most
+  // of the commands) or generate an Amber file (draw commands).
+  virtual void ProcessSubmittedCommand(DrawCallTracker*) = 0;
+
+ private:
+  Kind kind_;
   // clang-format on
 };
 
-struct CmdBeginRenderPass : public Cmd {
+class CmdBeginRenderPass : public Cmd {
+ public:
   CmdBeginRenderPass(VkRenderPassBeginInfo const* renderpass_begin,
                      VkSubpassContents contents)
       : Cmd(kBeginRenderPass),
-        render_pass_begin(DeepCopy(renderpass_begin)),
-        contents(contents) {}
+        render_pass_begin_(DeepCopy(renderpass_begin)),
+        contents_(contents) {}
 
-  ~CmdBeginRenderPass() override { DeepDelete(&render_pass_begin); }
+  ~CmdBeginRenderPass() override { DeepDelete(&render_pass_begin_); }
 
   // Disabled copy/move constructors and copy/move assign operators
   CmdBeginRenderPass(const CmdBeginRenderPass&) = delete;
@@ -85,71 +83,77 @@ struct CmdBeginRenderPass : public Cmd {
   CmdBeginRenderPass& operator=(const CmdBeginRenderPass&) = delete;
   CmdBeginRenderPass& operator=(CmdBeginRenderPass&&) = delete;
 
-  // Functions for getting a reference to this instance with correct type.
-  CmdBeginRenderPass* AsBeginRenderPass() override;
-  [[nodiscard]] const CmdBeginRenderPass* AsBeginRenderPass() const override;
+  // Sets the current render pass.
+  void ProcessSubmittedCommand(DrawCallTracker* draw_call_state) override;
 
-  VkRenderPassBeginInfo render_pass_begin;
-  VkSubpassContents contents;
+ private:
+  VkRenderPassBeginInfo render_pass_begin_;
+  VkSubpassContents contents_;
 };
 
-struct CmdBindPipeline : public Cmd {
+class CmdBindPipeline : public Cmd {
+ public:
   CmdBindPipeline(VkPipelineBindPoint pipeline_bind_point, VkPipeline pipeline)
       : Cmd(kBindPipeline),
-        pipeline_bind_point(pipeline_bind_point),
-        pipeline(pipeline) {}
+        pipeline_bind_point_(pipeline_bind_point),
+        pipeline_(pipeline) {}
 
-  // Functions for getting a reference to this instance with correct type.
-  CmdBindPipeline* AsBindPipeline() override;
-  [[nodiscard]] const CmdBindPipeline* AsBindPipeline() const override;
+  // Updates the bound pipeline.
+  void ProcessSubmittedCommand(
+      DrawCallTracker* draw_call_state_tracker) override;
 
-  VkPipelineBindPoint pipeline_bind_point;
-  VkPipeline pipeline;
+ private:
+  VkPipelineBindPoint pipeline_bind_point_;
+  VkPipeline pipeline_;
 };
 
-struct CmdDraw : public Cmd {
+class CmdDraw : public Cmd {
+ public:
   CmdDraw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex,
           uint32_t first_instance)
       : Cmd(kDraw),
-        vertex_count(vertex_count),
-        instance_count(instance_count),
-        first_vertex(first_vertex),
-        first_instance(first_instance) {}
+        vertex_count_(vertex_count),
+        instance_count_(instance_count),
+        first_vertex_(first_vertex),
+        first_instance_(first_instance) {}
 
-  // Functions for getting a reference to this instance with correct type.
-  CmdDraw* AsDraw() override;
-  [[nodiscard]] const CmdDraw* AsDraw() const override;
+  // Generates an Amber file if the draw call is marked to be captured.
+  void ProcessSubmittedCommand(
+      DrawCallTracker* draw_call_state_tracker) override;
 
-  uint32_t vertex_count;
-  uint32_t instance_count;
-  uint32_t first_vertex;
-  uint32_t first_instance;
+ private:
+  uint32_t vertex_count_;
+  uint32_t instance_count_;
+  uint32_t first_vertex_;
+  uint32_t first_instance_;
 };
 
-struct CmdDrawIndexed : public Cmd {
+class CmdDrawIndexed : public Cmd {
+ public:
   CmdDrawIndexed(uint32_t index_count, uint32_t instance_count,
                  uint32_t first_index, int32_t vertex_offset,
                  uint32_t first_instance)
       : Cmd(kDrawIndexed),
-        index_count(index_count),
-        instance_count(instance_count),
-        first_index(first_index),
-        vertex_offset(vertex_offset),
-        first_instance(first_instance) {}
+        index_count_(index_count),
+        instance_count_(instance_count),
+        first_index_(first_index),
+        vertex_offset_(vertex_offset),
+        first_instance_(first_instance) {}
 
-  // Functions for getting a reference to this instance with correct type.
-  CmdDrawIndexed* AsDrawIndexed() override;
-  [[nodiscard]] const CmdDrawIndexed* AsDrawIndexed() const override;
+  // Generates an Amber file if the draw call is marked to be captured.
+  void ProcessSubmittedCommand(
+      DrawCallTracker* draw_call_state_tracker) override;
 
-  uint32_t index_count;
-  uint32_t instance_count;
-  uint32_t first_index;
-  int32_t vertex_offset;
-  uint32_t first_instance;
+ private:
+  uint32_t index_count_;
+  uint32_t instance_count_;
+  uint32_t first_index_;
+  int32_t vertex_offset_;
+  uint32_t first_instance_;
 };
 
-}  // namespace gf_layers::amber_scoop_layer
-
 #pragma clang diagnostic pop
+
+}  // namespace gf_layers::amber_scoop_layer
 
 #endif  // VKLAYER_GF_AMBER_SCOOP_VULKAN_COMMANDS_H

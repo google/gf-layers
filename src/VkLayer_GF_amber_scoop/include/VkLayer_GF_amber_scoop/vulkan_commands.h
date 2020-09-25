@@ -33,10 +33,10 @@ class DrawCallTracker;
 
 // Cmd is a base for all vkCmdXX commands (Vulkan command buffer commands) we
 // are interested in. The interesting commands include all the commands that may
-// affect somehow the draw command(s) that will be captured.
+// affect the draw command(s) that will be captured.
 class Cmd {
  public:
-  // Types of the interesting commands. Names should be the same as the Vulkan's
+  // Types of interesting commands. Names should be the same as the Vulkan's
   // equivalent command names: "vkCmdXX" without the "vkCmd" prefix.
   enum Kind {
     kBeginRenderPass,

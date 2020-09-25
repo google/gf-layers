@@ -34,6 +34,7 @@ iwyu_tool.py \
   -- \
   -w \
   -Xiwyu --mapping_file="${GF_LAYERS_REPO_ROOT}/src/iwyu.imp" \
+  --no_fwd_decls option \
   | awk '/should add these lines:/{ exit_code = 1; } { print; } END { if (exit_code) { print "include-what-you-use error; see above."; exit 1; } }'
 
 # The -w option disables clang warnings, which are redundant because we are only checking includes.

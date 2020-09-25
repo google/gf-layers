@@ -30,14 +30,14 @@
 namespace gf_layers::amber_scoop_layer {
 
 // This class is used to keep track of a command buffer. This class stores
-// commands recorded to a command buffer and keeps track when the command buffer
-// has been submitted. Also keeps track if the command buffer being tracked
+// commands recorded to a command buffer and keeps track of when the command
+// buffer has been submitted. It also keeps track of whether the command buffer
 // contains any draw calls. The class is not thread-safe, but it shouldn't
 // matter because the Vulkan spec requires Vulkan applications to record
 // commands without races.
-class CommandBufferTracker {
+class CommandBufferData {
  public:
-  // Add command to the command list.
+  // Adds |cmd| to the command list.
   void AddCommand(std::unique_ptr<Cmd> cmd) {
     // Command buffer must be reset if it has been submitted and new commands
     // are being added to it, so we reset our command buffer tracker.
@@ -53,18 +53,17 @@ class CommandBufferTracker {
     command_list.push_back(std::move(cmd));
   }
 
-  // Return true if the command list contains a draw call.
+  // Returns true if the command list contains a draw call.
   [[nodiscard]] bool ContainsDrawCalls() const { return contains_draw_calls_; }
 
-  // Get reference to the list of captured commands. The list can't be modified
-  // directly. Use AddCommand() to add append the list.
-  [[nodiscard]] const std::vector<std::unique_ptr<Cmd>>* GetCommandList()
+  // Returns the list of captured commands. The list can't be modified directly.
+  // Use AddCommand() to append to the list.
+  [[nodiscard]] const std::vector<std::unique_ptr<Cmd>>& GetCommandList()
       const {
-    return &command_list;
+    return command_list;
   }
 
-  // Mark the command buffer to be submitted. The flag is reset automatically if
-  // a new command is added after the command buffer has been submitted.
+  // Sets the command buffer as submitted.
   void SetSubmitted() { is_submitted_ = true; }
 
  private:
@@ -110,7 +109,7 @@ struct DeviceData {
 
   // Tracked device data:
 
-  ProtectedMap<VkCommandBuffer, CommandBufferTracker> command_buffers;
+  ProtectedMap<VkCommandBuffer, CommandBufferData> command_buffers_data;
 };
 
 using InstanceMap = gf_layers::ProtectedTinyStaleMap<void*, InstanceData>;

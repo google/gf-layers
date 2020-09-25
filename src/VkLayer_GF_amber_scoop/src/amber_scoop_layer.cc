@@ -79,19 +79,20 @@ void InitSettingsIfNeeded() {
   }
 }
 
-// Adds the given Vulkan command buffer command to the list of tracked commands.
-// Creates a new list of commands for the given command buffer if it doesn't
-// already exist. Tracked commands will be parsed later when the command buffer
-// is submitted via vkQueueSubmit function.
+// Adds |command| to the list of tracked commands for |command_buffer|. Creates
+// a list of commands |command_buffer| if one doesn't already exist. Tracked
+// commands will be parsed later when |command_buffer| is submitted via the
+// vkQueueSubmit function.
 void AddCommand(DeviceData* device_data, VkCommandBuffer command_buffer,
                 std::unique_ptr<Cmd> command) {
   auto* tracked_command_buffer =
-      device_data->command_buffers.get(command_buffer);
+      device_data->command_buffers_data.get(command_buffer);
   // Check if the command buffer isn't tracked and start tracking if it isn't
   // tracked.
   if (tracked_command_buffer == nullptr) {
-    device_data->command_buffers.put(command_buffer, CommandBufferTracker());
-    tracked_command_buffer = device_data->command_buffers.get(command_buffer);
+    device_data->command_buffers_data.put(command_buffer, CommandBufferData());
+    tracked_command_buffer =
+        device_data->command_buffers_data.get(command_buffer);
   }
   tracked_command_buffer->AddCommand(std::move(command));
 }
@@ -183,10 +184,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
                                              VkSubmitInfo const* pSubmits,
                                              VkFence fence) {
   // Go through all tracked commands in all of the submitted command buffers.
-  // Every command buffer containing a draw call will be parsed command by
-  // command to get the states of every resource required by a draw call.
-  // If the draw call is requested to be captured, an Amber file will be
-  // generated from it.
+  // Every command buffer containing a draw call will be parsed to get the
+  // state of every resource required by a draw call. If the draw call is
+  // requested to be captured, an Amber file will be generated.
 
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
@@ -194,28 +194,28 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
 
   // Go through each queue submit.
   for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
-    // Go through all command buffers in each submit.
+    // Go through each command buffer in each submit.
     for (uint32_t cmd_buffer_idx = 0;
          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
          cmd_buffer_idx < pSubmits[submit_idx].commandBufferCount;
          cmd_buffer_idx++) {
-      auto* command_buffer_handle =
+      VkCommandBuffer command_buffer =
           // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
           pSubmits[submit_idx].pCommandBuffers[cmd_buffer_idx];
 
-      auto* command_buffer =
-          device_data->command_buffers.get(command_buffer_handle);
+      CommandBufferData* command_buffer_data =
+          device_data->command_buffers_data.get(command_buffer);
 
       // Ignore command buffers that are not tracked, i.e. command buffers that
       // don't contain any interesting commands.
-      if (command_buffer == nullptr) {
+      if (command_buffer_data == nullptr) {
         continue;
       }
       // Mark the command buffer as submitted.
-      command_buffer->SetSubmitted();
+      command_buffer_data->SetSubmitted();
 
       // Skip all command buffers that don't contain any draw calls.
-      if (!command_buffer->ContainsDrawCalls()) {
+      if (!command_buffer_data->ContainsDrawCalls()) {
         continue;
       }
 
@@ -224,13 +224,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
       // constant values, bound vertex and index buffers, etc. This information
       // is needed when a draw call needs to be processed to an Amber file.
       DrawCallTracker draw_call_tracker(global_data);
-      draw_call_tracker.GetDrawCallState()->command_buffer_handle =
-          command_buffer_handle;
+      draw_call_tracker.GetDrawCallState()->command_buffer = command_buffer;
       draw_call_tracker.GetDrawCallState()->queue = queue;
 
       // Process all submitted commands. Most of the commands update the state
       // of the draw call tracker and draw commands generate the Amber files.
-      for (const auto& cmd : *command_buffer->GetCommandList()) {
+      for (const std::unique_ptr<Cmd>& cmd :
+           command_buffer_data->GetCommandList()) {
         cmd->ProcessSubmittedCommand(&draw_call_tracker);
       }
     }

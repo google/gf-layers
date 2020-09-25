@@ -31,7 +31,7 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
                                      uint32_t first_instance,
                                      uint32_t instance_count) {
   // Silence unused parameter warnings.
-  // TODO(ilkkasaa) remove these when they are used.
+  // TODO(ilkkasaa): remove these when they are used.
   (void)first_vertex;
   (void)vertex_count;
 

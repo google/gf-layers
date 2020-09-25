@@ -21,9 +21,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace gf_layers::amber_scoop_layer {
+#include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
 
-struct GlobalData;
+namespace gf_layers::amber_scoop_layer {
 
 // Draw call tracker is used to store the state of a draw call while processing
 // the command buffers in vkQueueSubmit(...) -function. One draw call tracker is
@@ -33,11 +33,11 @@ class DrawCallTracker {
  public:
   // DrawCallState is a container for the state data.
   struct DrawCallState {
-    VkCommandBuffer command_buffer_handle = nullptr;
-    VkQueue queue = nullptr;
-    VkRenderPassBeginInfo* current_render_pass = nullptr;
-    uint32_t current_subpass = 0;
-    VkPipeline graphics_pipeline = nullptr;
+    VkCommandBuffer command_buffer;
+    VkQueue queue;
+    VkRenderPassBeginInfo* current_render_pass;
+    uint32_t current_subpass;
+    VkPipeline graphics_pipeline;
     std::vector<uint8_t> push_constant_data;
     // Map of vertex buffer bindings. Key is the binding number and value is the
     // buffer handle.

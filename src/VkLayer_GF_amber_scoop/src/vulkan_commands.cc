@@ -18,6 +18,8 @@
 
 namespace gf_layers::amber_scoop_layer {
 
+Cmd::Cmd() = default;
+
 Cmd::~Cmd() = default;
 
 void CmdBeginRenderPass::ProcessSubmittedCommand(

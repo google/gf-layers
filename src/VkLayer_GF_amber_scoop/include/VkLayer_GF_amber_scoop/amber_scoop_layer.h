@@ -21,59 +21,11 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <utility>
-#include <vector>
 
-#include "VkLayer_GF_amber_scoop/vulkan_commands.h"
+#include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "gf_layers_layer_util/util.h"
 
 namespace gf_layers::amber_scoop_layer {
-
-// This class is used to keep track of a command buffer. This class stores
-// commands recorded to a command buffer and keeps track of when the command
-// buffer has been submitted. It also keeps track of whether the command buffer
-// contains any draw calls. The class is not thread-safe, but it shouldn't
-// matter because the Vulkan spec requires Vulkan applications to record
-// commands without races.
-class CommandBufferData {
- public:
-  // Adds |cmd| to the command list.
-  void AddCommand(std::unique_ptr<Cmd> cmd) {
-    // Command buffer must be reset if it has been submitted and new commands
-    // are being added to it, so we reset our command buffer tracker.
-    if (is_submitted_) {
-      command_list.clear();
-      is_submitted_ = false;
-      contains_draw_calls_ = false;
-    }
-    // Set the flag if the command being added is a draw call.
-    if (cmd->GetKind() == Cmd::kDraw || cmd->GetKind() == Cmd::kDrawIndexed) {
-      contains_draw_calls_ = true;
-    }
-    command_list.push_back(std::move(cmd));
-  }
-
-  // Returns true if the command list contains a draw call.
-  [[nodiscard]] bool ContainsDrawCalls() const { return contains_draw_calls_; }
-
-  // Returns the list of captured commands. The list can't be modified directly.
-  // Use AddCommand() to append to the list.
-  [[nodiscard]] const std::vector<std::unique_ptr<Cmd>>& GetCommandList()
-      const {
-    return command_list;
-  }
-
-  // Sets the command buffer as submitted.
-  void SetSubmitted() { is_submitted_ = true; }
-
- private:
-  // Flag to tell if the command buffer has been submitted.
-  bool is_submitted_ = false;
-  // Flag to tell if the command list contains any draw calls.
-  bool contains_draw_calls_ = false;
-  // List of tracked commands.
-  std::vector<std::unique_ptr<Cmd>> command_list = {};
-};
 
 struct InstanceData {
   VkInstance instance;

@@ -36,17 +36,7 @@ class DrawCallTracker;
 // affect the draw command(s) that will be captured.
 class Cmd {
  public:
-  // Types of interesting commands. Names should be the same as the Vulkan's
-  // equivalent command names: "vkCmdXX" without the "vkCmd" prefix.
-  enum Kind {
-    kBeginRenderPass,
-    kBindPipeline,
-    kDraw,
-    kDrawIndexed,
-  };
-
-  explicit Cmd(Kind kind) : kind_(kind) {}
-
+  Cmd();
   virtual ~Cmd();
 
   // Disabled copy/move constructors and copy/move assign operators
@@ -55,25 +45,18 @@ class Cmd {
   Cmd& operator=(const Cmd&) = delete;
   Cmd& operator=(Cmd&&) = delete;
 
-  // Returns the command type.
-  [[nodiscard]] Kind GetKind() const { return kind_; }
+  virtual bool IsDrawCall() { return false; }
 
   // Overriding function should either update the given draw call tracker (most
   // of the commands) or generate an Amber file (draw commands).
   virtual void ProcessSubmittedCommand(DrawCallTracker*) = 0;
-
- private:
-  Kind kind_;
-  // clang-format on
 };
 
 class CmdBeginRenderPass : public Cmd {
  public:
   CmdBeginRenderPass(VkRenderPassBeginInfo const* renderpass_begin,
                      VkSubpassContents contents)
-      : Cmd(kBeginRenderPass),
-        render_pass_begin_(DeepCopy(renderpass_begin)),
-        contents_(contents) {}
+      : render_pass_begin_(DeepCopy(renderpass_begin)), contents_(contents) {}
 
   ~CmdBeginRenderPass() override { DeepDelete(&render_pass_begin_); }
 
@@ -94,9 +77,7 @@ class CmdBeginRenderPass : public Cmd {
 class CmdBindPipeline : public Cmd {
  public:
   CmdBindPipeline(VkPipelineBindPoint pipeline_bind_point, VkPipeline pipeline)
-      : Cmd(kBindPipeline),
-        pipeline_bind_point_(pipeline_bind_point),
-        pipeline_(pipeline) {}
+      : pipeline_bind_point_(pipeline_bind_point), pipeline_(pipeline) {}
 
   // Updates the bound pipeline.
   void ProcessSubmittedCommand(
@@ -111,11 +92,12 @@ class CmdDraw : public Cmd {
  public:
   CmdDraw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex,
           uint32_t first_instance)
-      : Cmd(kDraw),
-        vertex_count_(vertex_count),
+      : vertex_count_(vertex_count),
         instance_count_(instance_count),
         first_vertex_(first_vertex),
         first_instance_(first_instance) {}
+
+  bool IsDrawCall() override { return true; }
 
   // Generates an Amber file if the draw call is marked to be captured.
   void ProcessSubmittedCommand(
@@ -133,12 +115,13 @@ class CmdDrawIndexed : public Cmd {
   CmdDrawIndexed(uint32_t index_count, uint32_t instance_count,
                  uint32_t first_index, int32_t vertex_offset,
                  uint32_t first_instance)
-      : Cmd(kDrawIndexed),
-        index_count_(index_count),
+      : index_count_(index_count),
         instance_count_(instance_count),
         first_index_(first_index),
         vertex_offset_(vertex_offset),
         first_instance_(first_instance) {}
+
+  bool IsDrawCall() override { return true; }
 
   // Generates an Amber file if the draw call is marked to be captured.
   void ProcessSubmittedCommand(

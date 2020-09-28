@@ -21,7 +21,9 @@
 #include <cstring>
 #include <memory>
 #include <utility>
+#include <vector>
 
+#include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 #include "gf_layers_layer_util/logging.h"

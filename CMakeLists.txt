@@ -317,6 +317,7 @@ if(GF_LAYERS_WARNING_SUPPRESSIONS)
             /wd4711  # warning C4711: function 'x' selected for automatic inline expansion (informational)
             /wd4710  # warning C4710: 'x': function not inlined (informational)
             /wd4996  # warning C4996: 'getenv': This function or variable may be unsafe.
+            /wd5045  # warning C5045: Compiler will insert Spectre mitigation for memory load if /Qspectre switch specified
         )
     else()
         add_compile_options(

@@ -93,7 +93,7 @@ class ProtectedTinyStaleMap {
 
   void put(KeyType key, ValueType value) {
     ScopedLock lock(mutex_);
-    map_[key] = value;
+    map_[key] = std::move(value);
   }
 
  private:
@@ -112,7 +112,6 @@ class ProtectedMap {
   // Warning: we currently require the values to have pointer stability.
   // This is guaranteed for std::unordered_map.
   using InternalMapType = MapTemplate<KeyType, ValueType>;
-  using ThreadLocalCacheType = std::pair<KeyType, ValueType*>;
 
   ValueType* get(KeyType key) {
     ScopedLock lock(mutex_);
@@ -124,9 +123,9 @@ class ProtectedMap {
     return result;
   }
 
-  bool put(KeyType key, ValueType value) {
+  bool put(const KeyType key, ValueType value) {
     ScopedLock lock(mutex_);
-    return map_.insert({key, value}).second;
+    return map_.emplace(key, std::move(value)).second;
   }
 
   InternalMapType* access(ScopedLock* lock) {
@@ -137,7 +136,7 @@ class ProtectedMap {
 
  private:
   InternalMapType map_;
-  MutexType mutex_;
+  mutable MutexType mutex_;
 };
 
 // The following are dispatchable handles:
@@ -170,6 +169,10 @@ void* device_key(VkDevice handle);
 // Returns the VkQueue dispatch table pointer (same dispatch table as its
 // VkDevice) for |handle|.
 void* device_key(VkQueue handle);
+
+// Returns the VkCommandBuffer dispatch table pointer (same dispatch table as
+// its VkDevice) for |handle|.
+void* device_key(VkCommandBuffer handle);
 
 // Returns the VkLayerInstanceCreateInfo from the |pCreateInfo| given in a call
 // to vkCreateInstance. The VkLayerInstanceCreateInfo is needed to (a) obtain

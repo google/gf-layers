@@ -68,14 +68,13 @@ void InitSettingsIfNeeded() {
 
   if (!settings.init) {
     uint64_t draw_call_count = 1;
-    get_setting_uint64("VkLayer_GF_amber_scoop_START_DRAW_CALL",
-                       "debug.gf.as.start_draw_call",
-                       &settings.start_draw_call);
-    get_setting_uint64("VkLayer_GF_amber_scoop_DRAW_CALL_COUNT",
-                       "debug.gf.as.draw_call_count", &draw_call_count);
-    get_setting_string("VkLayer_GF_amber_scoop_OUTPUT_FILE_PREFIX",
-                       "debug.gf.as.output_file_prefix",
-                       &settings.output_file_prefix);
+    GetSettingUint64("VkLayer_GF_amber_scoop_START_DRAW_CALL",
+                     "debug.gf.as.start_draw_call", &settings.start_draw_call);
+    GetSettingUint64("VkLayer_GF_amber_scoop_DRAW_CALL_COUNT",
+                     "debug.gf.as.draw_call_count", &draw_call_count);
+    GetSettingString("VkLayer_GF_amber_scoop_OUTPUT_FILE_PREFIX",
+                     "debug.gf.as.output_file_prefix",
+                     &settings.output_file_prefix);
     settings.last_draw_call = settings.start_draw_call + draw_call_count;
     settings.init = true;
   }
@@ -88,13 +87,13 @@ void InitSettingsIfNeeded() {
 void AddCommand(DeviceData* device_data, VkCommandBuffer command_buffer,
                 std::unique_ptr<Cmd> command) {
   auto* tracked_command_buffer =
-      device_data->command_buffers_data.get(command_buffer);
+      device_data->command_buffers_data.Get(command_buffer);
   // Check if the command buffer isn't tracked and start tracking if it isn't
   // tracked.
   if (tracked_command_buffer == nullptr) {
-    device_data->command_buffers_data.put(command_buffer, CommandBufferData());
+    device_data->command_buffers_data.Put(command_buffer, CommandBufferData());
     tracked_command_buffer =
-        device_data->command_buffers_data.get(command_buffer);
+        device_data->command_buffers_data.Get(command_buffer);
   }
   tracked_command_buffer->AddCommand(std::move(command));
 }
@@ -109,7 +108,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
     const VkRenderPassBeginInfo* pRenderPassBegin, VkSubpassContents contents) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer))->get();
+      global_data->device_map.Get(DeviceKey(commandBuffer))->get();
 
   // Call the original function.
   device_data->vkCmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
@@ -126,7 +125,7 @@ vkCmdBindPipeline(VkCommandBuffer commandBuffer,
                   VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer))->get();
+      global_data->device_map.Get(DeviceKey(commandBuffer))->get();
 
   // Call the original function.
   device_data->vkCmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
@@ -145,7 +144,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer,
                                      uint32_t firstInstance) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer))->get();
+      global_data->device_map.Get(DeviceKey(commandBuffer))->get();
 
   // Call the original function.
   device_data->vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex,
@@ -164,7 +163,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
     uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(commandBuffer))->get();
+      global_data->device_map.Get(DeviceKey(commandBuffer))->get();
 
   // Call the original function.
   device_data->vkCmdDrawIndexed(commandBuffer, indexCount, instanceCount,
@@ -192,7 +191,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
 
   GlobalData* global_data = GetGlobalData();
   DeviceData* device_data =
-      global_data->device_map.get(device_key(queue))->get();
+      global_data->device_map.Get(DeviceKey(queue))->get();
 
   // Go through each queue submit.
   for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
@@ -206,7 +205,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
           pSubmits[submit_idx].pCommandBuffers[cmd_buffer_idx];
 
       CommandBufferData* command_buffer_data =
-          device_data->command_buffers_data.get(command_buffer);
+          device_data->command_buffers_data.Get(command_buffer);
 
       // Ignore command buffers that are not tracked, i.e. command buffers that
       // don't contain any interesting commands.
@@ -312,7 +311,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     DEBUG_ASSERT(physicalDevice);
 
     InstanceData* instance_data =
-        GetGlobalData()->instance_map.get(instance_key(physicalDevice));
+        GetGlobalData()->instance_map.Get(InstanceKey(physicalDevice));
 
     return instance_data->vkEnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
@@ -338,7 +337,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   //     able to get its layer info.
 
   VkLayerInstanceCreateInfo* layer_instance_create_info =
-      get_layer_instance_create_info(pCreateInfo);
+      GetLayerInstanceCreateInfo(pCreateInfo);
 
   DEBUG_ASSERT(layer_instance_create_info);
   DEBUG_ASSERT(layer_instance_create_info->u.pLayerInfo);
@@ -386,7 +385,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
-  GetGlobalData()->instance_map.put(instance_key(*pInstance), instance_data);
+  GetGlobalData()->instance_map.Put(InstanceKey(*pInstance), instance_data);
 
   return result;
 }
@@ -405,7 +404,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   //     able to get its layer info.
 
   VkLayerDeviceCreateInfo* layer_device_create_info =
-      get_layer_device_create_info(pCreateInfo);
+      GetLayerDeviceCreateInfo(pCreateInfo);
 
   DEBUG_ASSERT(layer_device_create_info);
   DEBUG_ASSERT(layer_device_create_info->u.pLayerInfo);
@@ -422,7 +421,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // we can pass the correct VkInstance.
 
   InstanceData* instance_data =
-      GetGlobalData()->instance_map.get(instance_key(physicalDevice));
+      GetGlobalData()->instance_map.Get(InstanceKey(physicalDevice));
 
   // Use next_get_instance_proc_address to get vkCreateDevice.
   auto vkCreateDevice =
@@ -472,7 +471,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   DEBUG_ASSERT(next_get_device_proc_address ==
                device_data->vkGetDeviceProcAddr);
 
-  GetGlobalData()->device_map.put(device_key(*pDevice), std::move(device_data));
+  GetGlobalData()->device_map.Put(DeviceKey(*pDevice), std::move(device_data));
 
   return result;
 }
@@ -512,7 +511,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // device and so we have the appropriate function pointer for the next
   // vkGetDeviceProcAddr. We call the next layer in the chain.
   return GetGlobalData()
-      ->device_map.get(device_key(device))
+      ->device_map.Get(DeviceKey(device))
       ->get()
       ->vkGetDeviceProcAddr(device, pName);
 }
@@ -562,7 +561,7 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   // pointer for the next vkGetInstanceProcAddr. We call the next layer in the
   // chain.
   return GetGlobalData()
-      ->instance_map.get(instance_key(instance))
+      ->instance_map.Get(InstanceKey(instance))
       ->vkGetInstanceProcAddr(instance, pName);
 }
 

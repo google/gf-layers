@@ -101,7 +101,7 @@ struct GlobalData {
 GlobalData global_data_;  // NOLINT(cert-err58-cpp)
 #pragma clang diagnostic pop
 
-GlobalData* get_global_data() { return &global_data_; }
+GlobalData* GetGlobalData() { return &global_data_; }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "VkLayer_GF_frame_counter",     // layerName
@@ -110,31 +110,31 @@ const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "Frame counter layer.",         // description
 }}};
 
-bool is_this_layer(const char* pLayerName) {
+bool IsThisLayer(const char* pLayerName) {
   return ((pLayerName != nullptr) &&
           strcmp(pLayerName, kLayerProperties[0].layerName) == 0);
 }
 
-void init_settings_if_needed() {
-  gf_layers::ScopedLock lock(get_global_data()->settings_mutex);
+void InitSettingsIfNeeded() {
+  gf_layers::ScopedLock lock(GetGlobalData()->settings_mutex);
 
-  FrameCounterLayerSettings& settings = get_global_data()->settings;
+  FrameCounterLayerSettings& settings = GetGlobalData()->settings;
 
   if (!settings.init) {
-    get_setting_uint64("VkLayer_GF_frame_counter_START_FRAME",
-                       "debug.gf.fc.start_frame", &settings.start_frame);
-    get_setting_uint64("VkLayer_GF_frame_counter_END_FRAME",
-                       "debug.gf.fc.end_frame", &settings.end_frame);
-    get_setting_string("VkLayer_GF_frame_counter_OUTPUT_FILE",
-                       "debug.gf.fc.output_file", &settings.output_file);
+    GetSettingUint64("VkLayer_GF_frame_counter_START_FRAME",
+                     "debug.gf.fc.start_frame", &settings.start_frame);
+    GetSettingUint64("VkLayer_GF_frame_counter_END_FRAME",
+                     "debug.gf.fc.end_frame", &settings.end_frame);
+    GetSettingString("VkLayer_GF_frame_counter_OUTPUT_FILE",
+                     "debug.gf.fc.output_file", &settings.output_file);
     settings.init = true;
   }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
 vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
-  GlobalData* global_data = get_global_data();
-  DeviceData* device_data = global_data->device_map.get(device_key(queue));
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data = global_data->device_map.Get(DeviceKey(queue));
 
   // Call the original function.
   VkResult result = device_data->vkQueuePresentKHR(queue, pPresentInfo);
@@ -259,7 +259,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
     VkExtensionProperties* /*pProperties*/) {
   DEBUG_LOG("vkEnumerateInstanceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     return VK_ERROR_LAYER_NOT_PRESENT;
   }
   *pPropertyCount = 0;
@@ -274,11 +274,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     uint32_t* pPropertyCount, VkExtensionProperties* pProperties) {
   DEBUG_LOG("vkEnumerateDeviceExtensionProperties");
 
-  if (!is_this_layer(pLayerName)) {
+  if (!IsThisLayer(pLayerName)) {
     DEBUG_ASSERT(physicalDevice);
 
     InstanceData* instance_data =
-        get_global_data()->instance_map.get(instance_key(physicalDevice));
+        GetGlobalData()->instance_map.Get(InstanceKey(physicalDevice));
 
     return instance_data->vkEnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
@@ -296,7 +296,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     const VkAllocationCallbacks* pAllocator, VkInstance* pInstance) {
   DEBUG_LOG("vkCreateInstance");
 
-  init_settings_if_needed();
+  InitSettingsIfNeeded();
 
   // Get the layer instance create info, which we need so we can:
   // (a) obtain the next GetInstanceProcAddr function and;
@@ -304,7 +304,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   //     able to get its layer info.
 
   VkLayerInstanceCreateInfo* layer_instance_create_info =
-      get_layer_instance_create_info(pCreateInfo);
+      GetLayerInstanceCreateInfo(pCreateInfo);
 
   DEBUG_ASSERT(layer_instance_create_info);
   DEBUG_ASSERT(layer_instance_create_info->u.pLayerInfo);
@@ -352,7 +352,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
-  get_global_data()->instance_map.put(instance_key(*pInstance), instance_data);
+  GetGlobalData()->instance_map.Put(InstanceKey(*pInstance), instance_data);
 
   return result;
 }
@@ -371,7 +371,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   //     able to get its layer info.
 
   VkLayerDeviceCreateInfo* layer_device_create_info =
-      get_layer_device_create_info(pCreateInfo);
+      GetLayerDeviceCreateInfo(pCreateInfo);
 
   DEBUG_ASSERT(layer_device_create_info);
   DEBUG_ASSERT(layer_device_create_info->u.pLayerInfo);
@@ -388,7 +388,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // we can pass the correct VkInstance.
 
   InstanceData* instance_data =
-      get_global_data()->instance_map.get(instance_key(physicalDevice));
+      GetGlobalData()->instance_map.Get(InstanceKey(physicalDevice));
 
   // Use next_get_instance_proc_address to get vkCreateDevice.
   auto vkCreateDevice =
@@ -432,7 +432,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
 
-  get_global_data()->device_map.put(device_key(*pDevice), device_data);
+  GetGlobalData()->device_map.Put(DeviceKey(*pDevice), device_data);
 
   return result;
 }
@@ -468,8 +468,8 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // intercepting. We must have already intercepted the creation of the
   // device and so we have the appropriate function pointer for the next
   // vkGetDeviceProcAddr. We call the next layer in the chain.
-  return get_global_data()
-      ->device_map.get(device_key(device))
+  return GetGlobalData()
+      ->device_map.Get(DeviceKey(device))
       ->vkGetDeviceProcAddr(device, pName);
 }
 
@@ -517,8 +517,8 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   // intercepted the creation of the instance and so we have the function
   // pointer for the next vkGetInstanceProcAddr. We call the next layer in the
   // chain.
-  return get_global_data()
-      ->instance_map.get(instance_key(instance))
+  return GetGlobalData()
+      ->instance_map.Get(InstanceKey(instance))
       ->vkGetInstanceProcAddr(instance, pName);
 }
 

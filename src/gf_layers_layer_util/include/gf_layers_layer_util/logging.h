@@ -17,7 +17,7 @@
 
 namespace gf_layers {
 
-void log(const char* format_string, ...);
+void Log(const char* format_string, ...);
 
 }  // namespace gf_layers
 
@@ -37,7 +37,7 @@ void log(const char* format_string, ...);
 // string on most compilers, without any compiler-specific annotations.
 #define LOG(...)                                                        \
   do {                                                                  \
-    gf_layers::log(__FILE__                                             \
+    gf_layers::Log(__FILE__                                             \
                    ":" GF_LAYERS_STRINGIFY(__LINE__) ": " __VA_ARGS__); \
     if (false) {                                                        \
       std::fprintf(stderr, __VA_ARGS__);                                \

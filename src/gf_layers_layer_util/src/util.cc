@@ -18,23 +18,23 @@
 
 namespace gf_layers {
 
-void* instance_key(VkInstance handle) {
+void* InstanceKey(VkInstance handle) {
   return *reinterpret_cast<void**>(handle);
 }
 
-void* instance_key(VkPhysicalDevice handle) {
+void* InstanceKey(VkPhysicalDevice handle) {
   return *reinterpret_cast<void**>(handle);
 }
 
-void* device_key(VkDevice handle) { return *reinterpret_cast<void**>(handle); }
+void* DeviceKey(VkDevice handle) { return *reinterpret_cast<void**>(handle); }
 
-void* device_key(VkQueue handle) { return *reinterpret_cast<void**>(handle); }
+void* DeviceKey(VkQueue handle) { return *reinterpret_cast<void**>(handle); }
 
-void* device_key(VkCommandBuffer handle) {
+void* DeviceKey(VkCommandBuffer handle) {
   return *reinterpret_cast<void**>(handle);
 }
 
-VkLayerInstanceCreateInfo* get_layer_instance_create_info(
+VkLayerInstanceCreateInfo* GetLayerInstanceCreateInfo(
     const VkInstanceCreateInfo* pCreateInfo) {
   // pCreateInfo->pNext is a linked list of unknown struct types, discriminated
   // by the first member |sType|.
@@ -55,7 +55,7 @@ VkLayerInstanceCreateInfo* get_layer_instance_create_info(
   return next;
 }
 
-VkLayerDeviceCreateInfo* get_layer_device_create_info(
+VkLayerDeviceCreateInfo* GetLayerDeviceCreateInfo(
     const VkDeviceCreateInfo* pCreateInfo) {
   // pCreateInfo->pNext is a linked list of unknown struct types, discriminated
   // by the first member |sType|.

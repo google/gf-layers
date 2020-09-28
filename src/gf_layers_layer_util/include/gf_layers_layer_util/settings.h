@@ -20,11 +20,11 @@
 
 namespace gf_layers {
 
-bool get_setting_string(const char* env_var, const char* android_prop,
-                        std::string* value);
+bool GetSettingString(const char* env_var, const char* android_prop,
+                      std::string* value);
 
-bool get_setting_uint64(const char* env_var, const char* android_prop,
-                        std::uint64_t* value);
+bool GetSettingUint64(const char* env_var, const char* android_prop,
+                      std::uint64_t* value);
 
 }  // namespace gf_layers
 

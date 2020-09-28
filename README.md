@@ -68,6 +68,8 @@ generate_files.py
 fix_format.sh
 ```
 
+## [Coding conventions](docs/conventions.md)
+
 ## CLion
 
 Use CLion to open the top-level CMakeLists.txt file.

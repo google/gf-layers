@@ -31,8 +31,7 @@ namespace gf_layers {
 namespace {
 
 #if defined(__ANDROID__)
-bool get_android_property(const char* android_property_name,
-                          std::string* value) {
+bool GetAndroidProperty(const char* android_property_name, std::string* value) {
   std::array<char, PROP_VALUE_MAX> buff{};
   if (__system_property_get(android_property_name, buff.data()) <= 0) {
     return false;
@@ -46,7 +45,7 @@ bool get_android_property(const char* android_property_name,
 }
 #endif
 
-bool get_env_var(const char* env_var, std::string* value) {
+bool GetEnvVar(const char* env_var, std::string* value) {
   const char* result = std::getenv(env_var);
   if (result == nullptr) {
     return false;
@@ -60,14 +59,14 @@ bool get_env_var(const char* env_var, std::string* value) {
 }
 }  // namespace
 
-bool get_setting_string(const char* env_var, const char* android_prop,
-                        std::string* value) {
-  if (get_env_var(env_var, value)) {
+bool GetSettingString(const char* env_var, const char* android_prop,
+                      std::string* value) {
+  if (GetEnvVar(env_var, value)) {
     return true;
   }
 
 #if defined(__ANDROID__)
-  if (get_android_property(android_prop, value)) {
+  if (GetAndroidProperty(android_prop, value)) {
     return true;
   }
 #endif
@@ -77,10 +76,10 @@ bool get_setting_string(const char* env_var, const char* android_prop,
   return false;
 }
 
-bool get_setting_uint64(const char* env_var, const char* android_prop,
-                        std::uint64_t* value) {
+bool GetSettingUint64(const char* env_var, const char* android_prop,
+                      std::uint64_t* value) {
   std::string temp;
-  if (!get_setting_string(env_var, android_prop, &temp)) {
+  if (!GetSettingString(env_var, android_prop, &temp)) {
     return false;
   }
 

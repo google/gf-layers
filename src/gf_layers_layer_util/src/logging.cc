@@ -24,7 +24,7 @@
 
 namespace gf_layers {
 
-void log(const char* format_string, ...) {
+void Log(const char* format_string, ...) {
   va_list vargs;
 
   // NOLINTNEXTLINE

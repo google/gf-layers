@@ -184,8 +184,8 @@ void InitSettingsIfNeeded() {
   ShaderFuzzerLayerSettings& settings = GetGlobalData()->settings;
 
   if (!settings.init) {
-    get_setting_string("VkLayer_GF_shader_fuzzer_OUTPUT_PREFIX",
-                       "debug.gf.sf.output_prefix", &settings.output_prefix);
+    GetSettingString("VkLayer_GF_shader_fuzzer_OUTPUT_PREFIX",
+                     "debug.gf.sf.output_prefix", &settings.output_prefix);
     settings.init = true;
   }
 }
@@ -373,7 +373,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
     VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
     const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule) {
   GlobalData* global_data = GetGlobalData();
-  DeviceData* device_data = global_data->device_map.get(device_key(device));
+  DeviceData* device_data = global_data->device_map.Get(DeviceKey(device));
 
   // Fuzzing the provided shader will either yield an empty vector - if
   // something went wrong - or a vector whose contents is the fuzzed shader
@@ -470,7 +470,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     DEBUG_ASSERT(physicalDevice);
 
     InstanceData* instance_data =
-        GetGlobalData()->instance_map.get(instance_key(physicalDevice));
+        GetGlobalData()->instance_map.Get(InstanceKey(physicalDevice));
 
     return instance_data->vkEnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
@@ -496,7 +496,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   //     able to get its layer info.
 
   VkLayerInstanceCreateInfo* layer_instance_create_info =
-      get_layer_instance_create_info(pCreateInfo);
+      GetLayerInstanceCreateInfo(pCreateInfo);
 
   DEBUG_ASSERT(layer_instance_create_info);
   DEBUG_ASSERT(layer_instance_create_info->u.pLayerInfo);
@@ -544,7 +544,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   DEBUG_ASSERT(next_get_instance_proc_address ==
                instance_data.vkGetInstanceProcAddr);
 
-  GetGlobalData()->instance_map.put(instance_key(*pInstance), instance_data);
+  GetGlobalData()->instance_map.Put(InstanceKey(*pInstance), instance_data);
 
   return result;
 }
@@ -563,7 +563,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   //     able to get its layer info.
 
   VkLayerDeviceCreateInfo* layer_device_create_info =
-      get_layer_device_create_info(pCreateInfo);
+      GetLayerDeviceCreateInfo(pCreateInfo);
 
   DEBUG_ASSERT(layer_device_create_info);
   DEBUG_ASSERT(layer_device_create_info->u.pLayerInfo);
@@ -580,7 +580,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
   // we can pass the correct VkInstance.
 
   InstanceData* instance_data =
-      GetGlobalData()->instance_map.get(instance_key(physicalDevice));
+      GetGlobalData()->instance_map.Get(InstanceKey(physicalDevice));
 
   // Use next_get_instance_proc_address to get vkCreateDevice.
   auto vkCreateDevice =
@@ -624,7 +624,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
 
-  GetGlobalData()->device_map.put(device_key(*pDevice), device_data);
+  GetGlobalData()->device_map.Put(DeviceKey(*pDevice), device_data);
 
   return result;
 }
@@ -661,7 +661,7 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // device and so we have the appropriate function pointer for the next
   // vkGetDeviceProcAddr. We call the next layer in the chain.
   return GetGlobalData()
-      ->device_map.get(device_key(device))
+      ->device_map.Get(DeviceKey(device))
       ->vkGetDeviceProcAddr(device, pName);
 }
 
@@ -710,7 +710,7 @@ vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
   // pointer for the next vkGetInstanceProcAddr. We call the next layer in the
   // chain.
   return GetGlobalData()
-      ->instance_map.get(instance_key(instance))
+      ->instance_map.Get(InstanceKey(instance))
       ->vkGetInstanceProcAddr(instance, pName);
 }
 

@@ -48,7 +48,7 @@ class ProtectedTinyStaleMap {
   using InternalMapType = MapTemplate<KeyType, ValueType>;
   using ThreadLocalCacheType = std::pair<KeyType, ValueType*>;
 
-  ValueType* get(KeyType key) {
+  ValueType* Get(KeyType key) {
     // If we allowed removal from the map then this method could return stale
     // values due to its thread-local cache. E.g. if one thread removed an entry
     // from the map, then another thread might still see the cached entry. This
@@ -91,7 +91,7 @@ class ProtectedTinyStaleMap {
     return result;
   }
 
-  void put(KeyType key, ValueType value) {
+  void Put(KeyType key, ValueType value) {
     ScopedLock lock(mutex_);
     map_[key] = std::move(value);
   }
@@ -113,7 +113,7 @@ class ProtectedMap {
   // This is guaranteed for std::unordered_map.
   using InternalMapType = MapTemplate<KeyType, ValueType>;
 
-  ValueType* get(KeyType key) {
+  ValueType* Get(KeyType key) {
     ScopedLock lock(mutex_);
     ValueType* result = nullptr;
     auto it = map_.find(key);
@@ -123,12 +123,12 @@ class ProtectedMap {
     return result;
   }
 
-  bool put(const KeyType key, ValueType value) {
+  bool Put(const KeyType key, ValueType value) {
     ScopedLock lock(mutex_);
     return map_.emplace(key, std::move(value)).second;
   }
 
-  InternalMapType* access(ScopedLock* lock) {
+  InternalMapType* Access(ScopedLock* lock) {
     ScopedLock local_lock(mutex_);
     lock->swap(local_lock);
     return &map_;
@@ -157,35 +157,35 @@ class ProtectedMap {
 // so that we can call the correct function in the next layer.
 
 // Returns the VkInstance dispatch table pointer for |handle|.
-void* instance_key(VkInstance handle);
+void* InstanceKey(VkInstance handle);
 
 // Returns the VkInstance (not VkPhysicalDevice) dispatch table pointer for
 // |handle|.
-void* instance_key(VkPhysicalDevice handle);
+void* InstanceKey(VkPhysicalDevice handle);
 
 // Returns the VkDevice dispatch table pointer for |handle|.
-void* device_key(VkDevice handle);
+void* DeviceKey(VkDevice handle);
 
 // Returns the VkQueue dispatch table pointer (same dispatch table as its
 // VkDevice) for |handle|.
-void* device_key(VkQueue handle);
+void* DeviceKey(VkQueue handle);
 
 // Returns the VkCommandBuffer dispatch table pointer (same dispatch table as
 // its VkDevice) for |handle|.
-void* device_key(VkCommandBuffer handle);
+void* DeviceKey(VkCommandBuffer handle);
 
 // Returns the VkLayerInstanceCreateInfo from the |pCreateInfo| given in a call
 // to vkCreateInstance. The VkLayerInstanceCreateInfo is needed to (a) obtain
 // the next GetInstanceProcAddr function and; (b) advance the "layer info"
 // linked list so that the next layer will be able to get its layer info.
-VkLayerInstanceCreateInfo* get_layer_instance_create_info(
+VkLayerInstanceCreateInfo* GetLayerInstanceCreateInfo(
     const VkInstanceCreateInfo* pCreateInfo);
 
 // Returns the VkLayerDeviceCreateInfo from the |pCreateInfo| given in a call to
 // vkCreateDevice. The VkLayerDeviceCreateInfo is needed to (a) obtain the next
 // Get{Instance,Device}ProcAddr functions and; (b) advance the "layer info"
 // linked list so that the next layer will be able to get its layer info.
-VkLayerDeviceCreateInfo* get_layer_device_create_info(
+VkLayerDeviceCreateInfo* GetLayerDeviceCreateInfo(
     const VkDeviceCreateInfo* pCreateInfo);
 
 }  // namespace gf_layers

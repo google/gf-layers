@@ -23,6 +23,7 @@
 #include <string>
 
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
+#include "VkLayer_GF_amber_scoop/shader_module_data.h"
 #include "gf_layers_layer_util/util.h"
 
 namespace gf_layers::amber_scoop_layer {
@@ -53,6 +54,9 @@ struct DeviceData {
 
   // Other device functions:
 
+  PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = {};
+  PFN_vkCreateShaderModule vkCreateShaderModule = {};
+  PFN_vkDestroyShaderModule vkDestroyShaderModule = {};
   PFN_vkQueueSubmit vkQueueSubmit = {};
   PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass = {};
   PFN_vkCmdDraw vkCmdDraw = {};
@@ -62,6 +66,9 @@ struct DeviceData {
   // Tracked device data:
 
   ProtectedMap<VkCommandBuffer, CommandBufferData> command_buffers_data;
+  ProtectedMap<VkPipeline, VkGraphicsPipelineCreateInfo> graphics_pipelines;
+  ProtectedMap<VkShaderModule, std::unique_ptr<ShaderModuleData>>
+      shader_modules_data;
 };
 
 using InstanceMap = gf_layers::ProtectedTinyStaleMap<void*, InstanceData>;

@@ -441,6 +441,12 @@ gf_layers_add_vulkan_layer(VkLayer_GF_frame_counter)
 ## A Vulkan layer for creating amber files from draw calls.
 ##
 gf_layers_add_vulkan_layer(VkLayer_GF_amber_scoop)
+target_include_directories(VkLayer_GF_amber_scoop
+        PRIVATE ${spirv-tools_SOURCE_DIR}
+        PRIVATE ${spirv-tools_BINARY_DIR}
+        )
+target_link_libraries(VkLayer_GF_amber_scoop
+        PRIVATE SPIRV-Tools-opt)
 
 ##
 ## Target: VkLayer_GF_shader_fuzzer

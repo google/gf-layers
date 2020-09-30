@@ -15,15 +15,29 @@
 #include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
 
 #include <atomic>
-#include <cstdint>
 #include <fstream>
+#include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
+#include "VkLayer_GF_amber_scoop/shader_module_data.h"
 #include "gf_layers_layer_util/logging.h"
+#include "gf_layers_layer_util/util.h"
+
+#pragma warning(push, 1)  // MSVC: reduces warning level to W1.
+
+#include "source/spirv_constant.h"
+#include "spirv-tools/libspirv.h"
+#include "spirv-tools/libspirv.hpp"
+
+#pragma warning(pop)
 
 namespace gf_layers::amber_scoop_layer {
+
+static std::string DisassembleShaderModule(
+    const VkShaderModuleCreateInfo& create_info);
 
 void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
                                      uint32_t first_vertex,
@@ -48,6 +62,35 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
   }
   global_data_->current_draw_call++;
 
+  auto* device_data =
+      global_data_->device_map.Get(DeviceKey(draw_call_state_.queue))->get();
+
+  VkPipelineShaderStageCreateInfo* vertex_shader = nullptr;
+  VkPipelineShaderStageCreateInfo* fragment_shader = nullptr;
+  auto* graphics_pipeline_create_info =
+      device_data->graphics_pipelines.Get(draw_call_state_.graphics_pipeline);
+
+  for (uint32_t stageIndex = 0;
+       stageIndex < graphics_pipeline_create_info->stageCount; stageIndex++) {
+    const auto& stage_create_info =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        graphics_pipeline_create_info->pStages[stageIndex];
+    if (stage_create_info.stage == VK_SHADER_STAGE_VERTEX_BIT) {
+      vertex_shader =
+          const_cast<VkPipelineShaderStageCreateInfo*>(&stage_create_info);
+    } else if (stage_create_info.stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
+      fragment_shader =
+          const_cast<VkPipelineShaderStageCreateInfo*>(&stage_create_info);
+    } else {
+      LOG("Shader stage not handled.");
+      RUNTIME_ASSERT(false);
+    }
+  }
+  // Both vertex and fragment shaders are required.
+  if (vertex_shader == nullptr || fragment_shader == nullptr) {
+    throw std::runtime_error("Missing vertex or fragment shader.");
+  }
+
   // Initialize string streams for different parts of the amber file.
   std::ostringstream buffer_declaration_str;
   // TODO(ilkkasaa): add other string streams
@@ -64,13 +107,19 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
   amber_file << "#!amber" << std::endl << std::endl;
 
   amber_file << "SHADER vertex vertex_shader SPIRV-ASM" << std::endl;
-  // TODO(ilkkasaa): add vertex shader spirv here
-  amber_file << "TODO" << std::endl;
+  amber_file << DisassembleShaderModule(
+                    device_data->shader_modules_data.Get(vertex_shader->module)
+                        ->get()
+                        ->GetCreateInfo())
+             << std::endl;
   amber_file << "END" << std::endl << std::endl;
 
   amber_file << "SHADER fragment fragment_shader SPIRV-ASM" << std::endl;
-  // TODO(ilkkasaa): add fragment shader spirv here
-  amber_file << "TODO" << std::endl;
+  amber_file << DisassembleShaderModule(device_data->shader_modules_data
+                                            .Get(fragment_shader->module)
+                                            ->get()
+                                            ->GetCreateInfo())
+             << std::endl;
   amber_file << "END" << std::endl << std::endl;
 
   // Pipeline
@@ -96,6 +145,68 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
                << instance_count;
   }
   amber_file << std::endl;
+}
+
+// Helper functions used only in this file.
+
+static std::string DisassembleShaderModule(
+    const VkShaderModuleCreateInfo& create_info) {
+  // Get SPIR-V shader module number.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  uint32_t version_word = create_info.pCode[1];
+  // NOLINTNEXTLINE(hicpp-signed-bitwise)
+  uint8_t major_version = SPV_SPIRV_VERSION_MAJOR_PART(version_word);
+  // NOLINTNEXTLINE(hicpp-signed-bitwise)
+  uint8_t minor_version = SPV_SPIRV_VERSION_MINOR_PART(version_word);
+
+  if (major_version != 1) {
+    LOG("Unknown SPIR-V major version %u", major_version);
+    RUNTIME_ASSERT(false);
+  }
+
+  spv_target_env target_env;  // NOLINT(cppcoreguidelines-init-variables)
+  switch (minor_version) {
+    case 0:
+      target_env = SPV_ENV_UNIVERSAL_1_0;
+      break;
+    case 1:
+      target_env = SPV_ENV_UNIVERSAL_1_1;
+      break;
+    case 2:
+      target_env = SPV_ENV_UNIVERSAL_1_2;
+      break;
+    case 3:
+      target_env = SPV_ENV_UNIVERSAL_1_3;
+      break;
+    case 4:
+      target_env = SPV_ENV_UNIVERSAL_1_4;
+      break;
+      // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+    case 5:
+      target_env = SPV_ENV_UNIVERSAL_1_5;
+      break;
+    default:
+      LOG("Unknown SPIR-V minor version %u", minor_version);
+      RUNTIME_ASSERT(false);
+  }
+
+  spvtools::SpirvTools tools(target_env);
+  if (!tools.IsValid()) {
+    LOG("Failed to instantiate SpirvTools object.");
+    RUNTIME_ASSERT(false);
+  }
+
+  // Convert code size to words.
+  const auto code_size_in_words =
+      static_cast<uint32_t>(create_info.codeSize) / 4;
+  std::vector<uint32_t> binary;
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  binary.assign(create_info.pCode, create_info.pCode + code_size_in_words);
+
+  std::string disassembly;
+  tools.Disassemble(binary, &disassembly, SPV_BINARY_TO_TEXT_OPTION_INDENT);
+
+  return disassembly;
 }
 
 }  // namespace gf_layers::amber_scoop_layer

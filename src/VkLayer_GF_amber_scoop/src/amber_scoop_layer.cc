@@ -25,6 +25,7 @@
 
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
+#include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
@@ -176,6 +177,95 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
 }
 
 // Other intercepted vulkan functions.
+
+//
+// Our vkCreateGraphicsPipelines function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
+    VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+    const VkGraphicsPipelineCreateInfo* pCreateInfos,
+    const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(device))->get();
+
+  // Call the original function.
+  VkResult result = device_data->vkCreateGraphicsPipelines(
+      device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
+      pPipelines);
+
+  if (result == VK_SUCCESS) {
+    // Deep copy all create info structs.
+    for (uint32_t i = 0; i < createInfoCount; i++) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      auto create_info = DeepCopy(pCreateInfos[i]);
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      device_data->graphics_pipelines.Put(pPipelines[i], create_info);
+
+      // Register the pipeline as a user of shader module of each stage so the
+      // shader modules can be freed from the memory when no longer used by any
+      // pipeline.
+      for (uint32_t stage_idx = 0; stage_idx < create_info.stageCount;
+           stage_idx++) {
+        auto* shader_module_data = device_data->shader_modules_data.Get(
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            create_info.pStages[stage_idx].module);
+
+        // All shader modules should be tracked.
+        DEBUG_ASSERT(shader_module_data != nullptr);
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        (*shader_module_data)->AddPipeline(pPipelines[i]);
+      }
+    }
+  }
+
+  return result;
+}
+
+//
+// Our vkCreateShaderModule function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
+    VkDevice device, VkShaderModuleCreateInfo const* pCreateInfo,
+    VkAllocationCallbacks const* pAllocator, VkShaderModule* pShaderModule) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(device))->get();
+
+  auto result = device_data->vkCreateShaderModule(device, pCreateInfo,
+                                                  pAllocator, pShaderModule);
+  if (result == VK_SUCCESS) {
+    // Deep copy the shader module's create info and create a ShaderModuleData
+    // object to keep track of the shader module's lifetime.
+    auto create_info_copy = DeepCopy(*pCreateInfo);
+    device_data->shader_modules_data.Put(
+        *pShaderModule, std::make_unique<ShaderModuleData>(create_info_copy));
+  }
+  return result;
+}
+
+//
+// Our vkDestroyShaderModule function.
+//
+void vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
+                           VkAllocationCallbacks const* pAllocator) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(device))->get();
+
+  // Call the original function.
+  device_data->vkDestroyShaderModule(device, shaderModule, pAllocator);
+
+  // Mark the shader as destroyed, but don't delete it yet (it may be still in
+  // use).
+  auto* shader_module_tracker =
+      device_data->shader_modules_data.Get(shaderModule);
+
+  if (shader_module_tracker != nullptr) {
+    (*shader_module_tracker)->SetDestroyed();
+  }
+}
 
 //
 // Our vkQueueSubmit function.
@@ -459,6 +549,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     return VK_ERROR_INITIALIZATION_FAILED;            \
   }
 
+  HANDLE(vkCreateGraphicsPipelines)
+  HANDLE(vkCreateShaderModule)
+  HANDLE(vkDestroyShaderModule)
   HANDLE(vkGetDeviceProcAddr)
   HANDLE(vkQueueSubmit)
   HANDLE(vkCmdBeginRenderPass)
@@ -495,6 +588,9 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   HANDLE(vkGetDeviceProcAddr)  // Self-reference.
 
   // Other device functions that this layer intercepts:
+  HANDLE(vkCreateGraphicsPipelines)
+  HANDLE(vkCreateShaderModule)
+  HANDLE(vkDestroyShaderModule)
   HANDLE(vkQueueSubmit)
   HANDLE(vkCmdBeginRenderPass)
   HANDLE(vkCmdBindPipeline)

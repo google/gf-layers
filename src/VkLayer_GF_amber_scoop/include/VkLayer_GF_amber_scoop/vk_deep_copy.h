@@ -56,7 +56,7 @@ T* CopyArray(T const* p_data, uint64_t num_elements) {
 // DeepDelete(VkGraphicsPipelineCreateInfo const*) to recursively free all
 // the allocated memory.
 VkGraphicsPipelineCreateInfo DeepCopy(
-    const VkGraphicsPipelineCreateInfo& createInfo);
+    const VkGraphicsPipelineCreateInfo& create_info);
 
 // Recursively deletes all the allocated memory of the given
 // VkGraphicsPipelineCreateInfo struct. Should be used only for structs

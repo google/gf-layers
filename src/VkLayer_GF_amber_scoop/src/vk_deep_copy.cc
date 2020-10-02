@@ -19,64 +19,64 @@
 namespace gf_layers::amber_scoop_layer {
 
 VkGraphicsPipelineCreateInfo DeepCopy(
-    const VkGraphicsPipelineCreateInfo& createInfo) {
-  VkGraphicsPipelineCreateInfo result = createInfo;
+    const VkGraphicsPipelineCreateInfo& create_info) {
+  VkGraphicsPipelineCreateInfo result = create_info;
   // Copy pStages
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* newStages =
-        new VkPipelineShaderStageCreateInfo[createInfo.stageCount];
+    auto* new_stages =
+        new VkPipelineShaderStageCreateInfo[create_info.stageCount];
 
-    for (uint32_t i = 0; i < createInfo.stageCount; i++) {
+    for (uint32_t i = 0; i < create_info.stageCount; i++) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      newStages[i] = DeepCopy(createInfo.pStages[i]);
+      new_stages[i] = DeepCopy(create_info.pStages[i]);
     }
-    result.pStages = newStages;
+    result.pStages = new_stages;
   }
 
   // Copy pVertexInputState
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* vertexInputState = new VkPipelineVertexInputStateCreateInfo();
-    *vertexInputState = *createInfo.pVertexInputState;
+    auto* vertex_input_state = new VkPipelineVertexInputStateCreateInfo();
+    *vertex_input_state = *create_info.pVertexInputState;
     // Copy pVertexBindingDescriptions
     {
-      vertexInputState->pVertexBindingDescriptions =
-          CopyArray(createInfo.pVertexInputState->pVertexBindingDescriptions,
-                    vertexInputState->vertexBindingDescriptionCount);
+      vertex_input_state->pVertexBindingDescriptions =
+          CopyArray(create_info.pVertexInputState->pVertexBindingDescriptions,
+                    vertex_input_state->vertexBindingDescriptionCount);
     }
     // Copy pVertexAttributeDescriptions
     {
-      vertexInputState->pVertexAttributeDescriptions = CopyArray(
-          createInfo.pVertexInputState->pVertexAttributeDescriptions,
-          createInfo.pVertexInputState->vertexAttributeDescriptionCount);
+      vertex_input_state->pVertexAttributeDescriptions = CopyArray(
+          create_info.pVertexInputState->pVertexAttributeDescriptions,
+          create_info.pVertexInputState->vertexAttributeDescriptionCount);
     }
-    result.pVertexInputState = vertexInputState;
+    result.pVertexInputState = vertex_input_state;
   }
 
   // Copy pInputAssemblyState
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* inputAssemblyStateCreateInfo =
+    auto* input_assembly_create_info =
         new VkPipelineInputAssemblyStateCreateInfo();
-    *inputAssemblyStateCreateInfo = *createInfo.pInputAssemblyState;
-    result.pInputAssemblyState = inputAssemblyStateCreateInfo;
+    *input_assembly_create_info = *create_info.pInputAssemblyState;
+    result.pInputAssemblyState = input_assembly_create_info;
   }
 
   // Copy pRasterizationState
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* rasterizationState = new VkPipelineRasterizationStateCreateInfo();
-    *rasterizationState = *createInfo.pRasterizationState;
-    result.pRasterizationState = rasterizationState;
+    auto* rasterization_state_create_info = new VkPipelineRasterizationStateCreateInfo();
+    *rasterization_state_create_info = *create_info.pRasterizationState;
+    result.pRasterizationState = rasterization_state_create_info;
   }
 
   // Copy pDepthStencilState
-  if (createInfo.pDepthStencilState != nullptr) {
+  if (create_info.pDepthStencilState != nullptr) {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* depthStencilState = new VkPipelineDepthStencilStateCreateInfo();
-    *depthStencilState = *createInfo.pDepthStencilState;
-    result.pDepthStencilState = depthStencilState;
+    auto* depth_stencil_state_create_info = new VkPipelineDepthStencilStateCreateInfo();
+    *depth_stencil_state_create_info = *create_info.pDepthStencilState;
+    result.pDepthStencilState = depth_stencil_state_create_info;
   }
 
   // TODO(ilkkasaa): handle deep copying of other fields.

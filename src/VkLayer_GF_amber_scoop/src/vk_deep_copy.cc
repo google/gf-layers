@@ -66,7 +66,8 @@ VkGraphicsPipelineCreateInfo DeepCopy(
   // Copy pRasterizationState
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* rasterization_state_create_info = new VkPipelineRasterizationStateCreateInfo();
+    auto* rasterization_state_create_info =
+        new VkPipelineRasterizationStateCreateInfo();
     *rasterization_state_create_info = *create_info.pRasterizationState;
     result.pRasterizationState = rasterization_state_create_info;
   }
@@ -74,7 +75,8 @@ VkGraphicsPipelineCreateInfo DeepCopy(
   // Copy pDepthStencilState
   if (create_info.pDepthStencilState != nullptr) {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* depth_stencil_state_create_info = new VkPipelineDepthStencilStateCreateInfo();
+    auto* depth_stencil_state_create_info =
+        new VkPipelineDepthStencilStateCreateInfo();
     *depth_stencil_state_create_info = *create_info.pDepthStencilState;
     result.pDepthStencilState = depth_stencil_state_create_info;
   }

@@ -24,11 +24,11 @@
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
 #include "VkLayer_GF_amber_scoop/shader_module_data.h"
 #include "gf_layers_layer_util/logging.h"
+#include "gf_layers_layer_util/spirv.h"
 #include "gf_layers_layer_util/util.h"
 
 #pragma warning(push, 1)  // MSVC: reduces warning level to W1.
 
-#include "source/spirv_constant.h"
 #include "spirv-tools/libspirv.h"
 #include "spirv-tools/libspirv.hpp"
 
@@ -154,10 +154,8 @@ static std::string DisassembleShaderModule(
   // Get SPIR-V shader module number.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   uint32_t version_word = create_info.pCode[1];
-  // NOLINTNEXTLINE(hicpp-signed-bitwise)
-  uint8_t major_version = SPV_SPIRV_VERSION_MAJOR_PART(version_word);
-  // NOLINTNEXTLINE(hicpp-signed-bitwise)
-  uint8_t minor_version = SPV_SPIRV_VERSION_MINOR_PART(version_word);
+  uint8_t major_version = GetSpirvVersionMajorPart(version_word);
+  uint8_t minor_version = GetSpirvVersionMinorPart(version_word);
 
   if (major_version != 1) {
     LOG("Unknown SPIR-V major version %u", major_version);
@@ -199,9 +197,11 @@ static std::string DisassembleShaderModule(
   // Convert code size to words.
   const auto code_size_in_words =
       static_cast<uint32_t>(create_info.codeSize) / 4;
-  std::vector<uint32_t> binary;
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  binary.assign(create_info.pCode, create_info.pCode + code_size_in_words);
+
+  std::vector<uint32_t> binary(
+      create_info.pCode,
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      create_info.pCode + code_size_in_words);
 
   std::string disassembly;
   tools.Disassemble(binary, &disassembly, SPV_BINARY_TO_TEXT_OPTION_INDENT);

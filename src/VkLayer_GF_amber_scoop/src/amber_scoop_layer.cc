@@ -198,7 +198,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
     // Deep copy all create info structs.
     for (uint32_t i = 0; i < createInfoCount; i++) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      auto create_info = DeepCopy(pCreateInfos[i]);
+      VkGraphicsPipelineCreateInfo create_info = DeepCopy(pCreateInfos[i]);
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       device_data->graphics_pipelines.Put(pPipelines[i], create_info);
 
@@ -207,9 +207,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
       // pipeline.
       for (uint32_t stage_idx = 0; stage_idx < create_info.stageCount;
            stage_idx++) {
-        auto* shader_module_data = device_data->shader_modules_data.Get(
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            create_info.pStages[stage_idx].module);
+        std::unique_ptr<ShaderModuleData>* shader_module_data =
+            device_data->shader_modules_data.Get(
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                create_info.pStages[stage_idx].module);
 
         // All shader modules should be tracked.
         DEBUG_ASSERT(shader_module_data != nullptr);

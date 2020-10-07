@@ -37,7 +37,7 @@ class ShaderModuleData {
 
   ~ShaderModuleData() { DeepDelete(create_info_); }
 
-  // Disabled copy/move constructors and copy/move assign operators
+  // Disabled copy/move constructors and copy/move assign operators.
   ShaderModuleData(const ShaderModuleData&) = delete;
   ShaderModuleData(ShaderModuleData&&) = delete;
   ShaderModuleData& operator=(const ShaderModuleData&) = delete;

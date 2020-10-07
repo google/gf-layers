@@ -30,6 +30,7 @@
 
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
+#include "gf_layers_layer_util/spirv.h"
 #include "gf_layers_layer_util/util.h"
 
 #pragma GCC diagnostic push  // Clang, GCC.
@@ -74,7 +75,6 @@
 #include "source/fuzz/protobufs/spvtoolsfuzz.pb.h"
 #include "source/fuzz/pseudo_random_generator.h"
 #include "source/fuzz/random_generator.h"
-#include "source/spirv_constant.h"
 #include "spirv-tools/libspirv.h"
 #include "spirv-tools/libspirv.hpp"
 #include "tools/io.h"
@@ -201,10 +201,8 @@ std::vector<uint32_t> TryFuzzingShader(
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   uint32_t version_word = pCreateInfo->pCode[1];
 
-  // NOLINTNEXTLINE(hicpp-signed-bitwise)
-  uint8_t major_version = SPV_SPIRV_VERSION_MAJOR_PART(version_word);
-  // NOLINTNEXTLINE(hicpp-signed-bitwise)
-  uint8_t minor_version = SPV_SPIRV_VERSION_MINOR_PART(version_word);
+  uint8_t major_version = GetSpirvVersionMajorPart(version_word);
+  uint8_t minor_version = GetSpirvVersionMinorPart(version_word);
 
   if (major_version != 1) {
     LOG("Unknown SPIR-V major version %u; shader %" PRIu64

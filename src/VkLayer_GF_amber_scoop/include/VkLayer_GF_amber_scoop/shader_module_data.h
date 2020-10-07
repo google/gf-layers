@@ -15,13 +15,12 @@
 #ifndef VKLAYER_GF_AMBER_SCOOP_SHADER_MODULE_DATA_H
 #define VKLAYER_GF_AMBER_SCOOP_SHADER_MODULE_DATA_H
 
-#include <gf_layers_layer_util/util.h>
-
 #include <memory>
 #include <set>
 #include <vector>
 
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
+#include "gf_layers_layer_util/util.h"
 
 namespace gf_layers::amber_scoop_layer {
 

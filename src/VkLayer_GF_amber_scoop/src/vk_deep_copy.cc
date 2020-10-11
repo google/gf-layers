@@ -14,8 +14,6 @@
 
 #include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
 
-#include <cstring>
-
 #include "absl/types/span.h"
 
 namespace gf_layers::amber_scoop_layer {

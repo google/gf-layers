@@ -26,6 +26,7 @@
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
+#include "absl/types/span.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
@@ -282,17 +283,12 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
   DeviceData* device_data =
       global_data->device_map.Get(DeviceKey(queue))->get();
 
-  // Go through each queue submit.
-  for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
-    // Go through each command buffer in each submit.
-    for (uint32_t cmd_buffer_idx = 0;
-         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-         cmd_buffer_idx < pSubmits[submit_idx].commandBufferCount;
-         cmd_buffer_idx++) {
-      VkCommandBuffer command_buffer =
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          pSubmits[submit_idx].pCommandBuffers[cmd_buffer_idx];
-
+  // For each queue submit...
+  for (const VkSubmitInfo& submit_info :
+       absl::MakeConstSpan(pSubmits, submitCount)) {
+    // For each command buffer...
+    for (const VkCommandBuffer& command_buffer : absl::MakeConstSpan(
+             submit_info.pCommandBuffers, submit_info.commandBufferCount)) {
       CommandBufferData* command_buffer_data =
           device_data->command_buffers_data.Get(command_buffer);
 
@@ -354,8 +350,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
 
   *pPropertyCount = 1;
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  pProperties[0] = kLayerProperties[0];
+  *pProperties = kLayerProperties[0];
 
   return VK_SUCCESS;
 }

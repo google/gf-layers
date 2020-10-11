@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/span.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/spirv.h"
@@ -198,8 +199,12 @@ std::vector<uint32_t> TryFuzzingShader(
   // Grab a new suffix for this shader module.
   uint64_t shader_module_number = global_data->shader_module_counter++;
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  uint32_t version_word = pCreateInfo->pCode[1];
+  // Get a span containing the shader code. |pCreateInfo->codeSize| gives the
+  // size in bytes, so we convert it to words.
+  absl::Span<const uint32_t> code =
+      absl::MakeConstSpan(pCreateInfo->pCode, pCreateInfo->codeSize / 4);
+
+  uint32_t version_word = code[1];
 
   uint8_t major_version = GetSpirvVersionMajorPart(version_word);
   uint8_t minor_version = GetSpirvVersionMinorPart(version_word);
@@ -240,10 +245,6 @@ std::vector<uint32_t> TryFuzzingShader(
       return std::vector<uint32_t>();
   }
 
-  // |pCreateInfo->codeSize| gives the size in bytes; convert it to words.
-  const uint32_t code_size_in_words =
-      static_cast<uint32_t>(pCreateInfo->codeSize) / 4;
-
   spvtools::SpirvTools tools(target_env);
 
   if (!tools.IsValid()) {
@@ -254,10 +255,7 @@ std::vector<uint32_t> TryFuzzingShader(
 
   // Create a fuzzer and the various parameters required for fuzzing.
   spvtools::ValidatorOptions validator_options;
-  std::vector<uint32_t> binary_in(
-      pCreateInfo->pCode,
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      pCreateInfo->pCode + code_size_in_words);
+  std::vector<uint32_t> binary_in(code.begin(), code.end());
 
   spvtools::fuzz::protobufs::FactSequence no_facts;
   std::vector<spvtools::fuzz::fuzzerutil::ModuleSupplier> no_donors;
@@ -319,7 +317,7 @@ std::vector<uint32_t> TryFuzzingShader(
                                 << shader_module_number_padded
                                 << "_original.spv";
     WriteFile<uint32_t>(original_shader_binary_name.str().c_str(), "wb",
-                        pCreateInfo->pCode, code_size_in_words);
+                        code.data(), code.size());
   }
 
   // Write out the fuzzed shader module
@@ -422,8 +420,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
 
   *pPropertyCount = 1;
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  pProperties[0] = kLayerProperties[0];
+  *pProperties = kLayerProperties[0];
 
   return VK_SUCCESS;
 }

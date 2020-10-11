@@ -56,6 +56,13 @@ set(
     PATH
     "Path to a https://github.com/protocolbuffers/protobuf repo.")
 
+set(
+    GF_LAYERS_ABSEIL_CPP_REPO_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil-cpp
+    CACHE
+    PATH
+    "Path to a https://github.com/abseil-cpp repo.")
+
 option(
     GF_LAYERS_USE_LLVM_LIBCPP
     "Use LLVM's libc++ when using Clang, plus various other LLVM options, but only if gf-layers is the root project."
@@ -267,6 +274,22 @@ target_include_directories(
 
 
 ##
+## Project: abseil-cpp
+##
+## Provides targets: absl::base, absl::flags, and others.
+##
+if(NOT TARGET absl::base OR NOT TARGET absl::flags)
+    if(NOT IS_DIRECTORY ${GF_LAYERS_ABSEIL_CPP_REPO_DIR})
+        message(
+            FATAL_ERROR
+            "Could not find abseil-cpp at ${GF_LAYERS_ABSEIL_CPP_REPO_DIR}. "
+            "Try fetching submodules or set GF_LAYERS_ABSEIL_CPP_REPO_DIR.")
+    endif()
+    add_subdirectory(${GF_LAYERS_ABSEIL_CPP_REPO_DIR} EXCLUDE_FROM_ALL)
+endif()
+
+
+##
 ## The targets that follow are all gf-layers targets.
 ## We now conditionally set some compile options related to warnings.
 ## Most of these will only be set if gf-layers is the root project being built.
@@ -339,7 +362,7 @@ endif()
 add_subdirectory(src/gf_layers_layer_util EXCLUDE_FROM_ALL)  # Provides gf_layers_layer_util_SOURCES.
 add_library(gf_layers_layer_util STATIC ${gf_layers_layer_util_SOURCES})
 target_include_directories(gf_layers_layer_util PUBLIC src/gf_layers_layer_util/include)
-target_link_libraries(gf_layers_layer_util PUBLIC gf_layers_vulkan_headers)
+target_link_libraries(gf_layers_layer_util PUBLIC gf_layers_vulkan_headers PRIVATE absl::core_headers)
 target_compile_features(gf_layers_layer_util PUBLIC cxx_std_17)
 # We do not want Vulkan function prototypes. Our util library must not call
 # Vulkan functions directly.
@@ -401,7 +424,8 @@ function(gf_layers_add_vulkan_layer name)
             ${name}
             PRIVATE
             gf_layers_vulkan_headers
-            gf_layers_layer_util)
+            gf_layers_layer_util
+            absl::span)
     target_compile_features(${name} PUBLIC cxx_std_17)
     # We do not want Vulkan function prototypes, as layers must not call any
     # Vulkan functions directly.

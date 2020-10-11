@@ -16,6 +16,8 @@
 
 #include <cstring>
 
+#include "absl/types/span.h"
+
 namespace gf_layers::amber_scoop_layer {
 
 VkGraphicsPipelineCreateInfo DeepCopy(

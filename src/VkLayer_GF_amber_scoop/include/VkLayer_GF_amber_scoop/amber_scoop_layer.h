@@ -23,7 +23,8 @@
 #include <string>
 
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
-#include "VkLayer_GF_amber_scoop/shader_module_data.h"
+#include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
+#include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
 #include "gf_layers_layer_util/util.h"
 
 namespace gf_layers::amber_scoop_layer {
@@ -66,8 +67,14 @@ struct DeviceData {
   // Tracked device data:
 
   ProtectedMap<VkCommandBuffer, CommandBufferData> command_buffers_data;
-  ProtectedMap<VkPipeline, VkGraphicsPipelineCreateInfo> graphics_pipelines;
-  ProtectedMap<VkShaderModule, std::unique_ptr<ShaderModuleData>>
+  ProtectedMap<VkPipeline, std::unique_ptr<GraphicsPipelineData>>
+      graphics_pipelines;
+  // Map of shader modules. Shared pointers are used because all of the
+  // pipelines using the shader module also has reference to it.
+  // |ShaderModuleData| will be deleted when the last pipeline using it is
+  // destroyed and the shader module itself is destroyed via
+  // vkDestroyShaderModule.
+  ProtectedMap<VkShaderModule, std::shared_ptr<ShaderModuleData>>
       shader_modules_data;
 };
 

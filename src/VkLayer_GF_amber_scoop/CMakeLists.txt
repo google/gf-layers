@@ -15,12 +15,15 @@
 set(VkLayer_GF_amber_scoop_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/include/VkLayer_GF_amber_scoop/amber_scoop_layer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/VkLayer_GF_amber_scoop/command_buffer_data.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/VkLayer_GF_amber_scoop/create_info_wrapper.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/VkLayer_GF_amber_scoop/draw_call_tracker.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/VkLayer_GF_amber_scoop/graphics_pipeline_data.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/VkLayer_GF_amber_scoop/vk_deep_copy.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/VkLayer_GF_amber_scoop/vulkan_commands.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/amber_scoop_layer.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/command_buffer_data.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/draw_call_tracker.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics_pipeline_data.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vk_deep_copy.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan_commands.cc
     PARENT_SCOPE

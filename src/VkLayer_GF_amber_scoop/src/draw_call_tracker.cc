@@ -14,6 +14,8 @@
 
 #include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
 
+#include <vulkan/vulkan.h>
+
 #include <atomic>
 #include <fstream>
 #include <memory>
@@ -22,7 +24,8 @@
 #include <string>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
-#include "VkLayer_GF_amber_scoop/shader_module_data.h"
+#include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
+#include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/spirv.h"
 #include "gf_layers_layer_util/util.h"
@@ -67,14 +70,16 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
 
   VkPipelineShaderStageCreateInfo* vertex_shader = nullptr;
   VkPipelineShaderStageCreateInfo* fragment_shader = nullptr;
-  auto* graphics_pipeline_create_info =
-      device_data->graphics_pipelines.Get(draw_call_state_.graphics_pipeline);
+  const GraphicsPipelineData* graphics_pipeline_data =
+      device_data->graphics_pipelines.Get(draw_call_state_.graphics_pipeline)
+          ->get();
 
   for (uint32_t stageIndex = 0;
-       stageIndex < graphics_pipeline_create_info->stageCount; stageIndex++) {
+       stageIndex < graphics_pipeline_data->GetCreateInfo().stageCount;
+       stageIndex++) {
     const auto& stage_create_info =
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        graphics_pipeline_create_info->pStages[stageIndex];
+        graphics_pipeline_data->GetCreateInfo().pStages[stageIndex];
     if (stage_create_info.stage == VK_SHADER_STAGE_VERTEX_BIT) {
       vertex_shader =
           const_cast<VkPipelineShaderStageCreateInfo*>(&stage_create_info);
@@ -106,19 +111,21 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
 
   amber_file << "#!amber" << std::endl << std::endl;
 
+  graphics_pipeline_data->GetShaderModuleData(vertex_shader->module);
+
   amber_file << "SHADER vertex vertex_shader SPIRV-ASM" << std::endl;
   amber_file << DisassembleShaderModule(
-                    device_data->shader_modules_data.Get(vertex_shader->module)
-                        ->get()
+                    graphics_pipeline_data
+                        ->GetShaderModuleData(vertex_shader->module)
                         ->GetCreateInfo())
              << std::endl;
   amber_file << "END" << std::endl << std::endl;
 
   amber_file << "SHADER fragment fragment_shader SPIRV-ASM" << std::endl;
-  amber_file << DisassembleShaderModule(device_data->shader_modules_data
-                                            .Get(fragment_shader->module)
-                                            ->get()
-                                            ->GetCreateInfo())
+  amber_file << DisassembleShaderModule(
+                    graphics_pipeline_data
+                        ->GetShaderModuleData(fragment_shader->module)
+                        ->GetCreateInfo())
              << std::endl;
   amber_file << "END" << std::endl << std::endl;
 

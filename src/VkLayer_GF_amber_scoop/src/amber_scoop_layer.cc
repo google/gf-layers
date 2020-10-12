@@ -20,12 +20,12 @@
 #include <array>
 #include <cstring>
 #include <memory>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
-#include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
@@ -194,31 +194,37 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
       device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
       pPipelines);
 
-  if (result == VK_SUCCESS) {
-    // Deep copy all create info structs.
-    for (uint32_t i = 0; i < createInfoCount; i++) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      VkGraphicsPipelineCreateInfo create_info = DeepCopy(pCreateInfos[i]);
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      device_data->graphics_pipelines.Put(pPipelines[i], create_info);
+  if (result != VK_SUCCESS) {
+    return result;
+  }
 
-      // Register the pipeline as a user of shader module of each stage so the
-      // shader modules can be freed from the memory when no longer used by any
-      // pipeline.
-      for (uint32_t stage_idx = 0; stage_idx < create_info.stageCount;
-           stage_idx++) {
-        std::unique_ptr<ShaderModuleData>* shader_module_data =
-            device_data->shader_modules_data.Get(
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                create_info.pStages[stage_idx].module);
-
-        // All shader modules should be tracked.
-        DEBUG_ASSERT(shader_module_data != nullptr);
-
+  // Deep copy all create info structs.
+  for (uint32_t i = 0; i < createInfoCount; i++) {
+    auto graphics_pipeline_data = std::make_unique<GraphicsPipelineData>(
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        (*shader_module_data)->AddPipeline(pPipelines[i]);
-      }
+        pCreateInfos[i]);
+
+    // Add the shader modules to the |graphics_pipeline_data|.
+    for (uint32_t stage_idx = 0;
+         stage_idx < graphics_pipeline_data->GetCreateInfo().stageCount;
+         stage_idx++) {
+      VkShaderModule shader_module =
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          graphics_pipeline_data->GetCreateInfo().pStages[stage_idx].module;
+
+      std::shared_ptr<ShaderModuleData> shader_module_data =
+          *device_data->shader_modules_data.Get(shader_module);
+
+      // All shader modules should be tracked.
+      DEBUG_ASSERT(shader_module_data != nullptr);
+
+      graphics_pipeline_data->AddShaderModule(shader_module,
+                                              shader_module_data);
     }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    device_data->graphics_pipelines.Put(pPipelines[i],
+                                        std::move(graphics_pipeline_data));
   }
 
   return result;
@@ -237,11 +243,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
   auto result = device_data->vkCreateShaderModule(device, pCreateInfo,
                                                   pAllocator, pShaderModule);
   if (result == VK_SUCCESS) {
-    // Deep copy the shader module's create info and create a ShaderModuleData
-    // object to keep track of the shader module's lifetime.
-    auto create_info_copy = DeepCopy(*pCreateInfo);
+    // Create a ShaderModuleData object to keep track of the shader module's
+    // lifetime.
     device_data->shader_modules_data.Put(
-        *pShaderModule, std::make_unique<ShaderModuleData>(create_info_copy));
+        *pShaderModule, std::make_unique<ShaderModuleData>(*pCreateInfo));
   }
   return result;
 }
@@ -258,14 +263,12 @@ void vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
   // Call the original function.
   device_data->vkDestroyShaderModule(device, shaderModule, pAllocator);
 
-  // Mark the shader as destroyed, but don't delete it yet (it may be still in
-  // use).
-  auto* shader_module_tracker =
-      device_data->shader_modules_data.Get(shaderModule);
-
-  if (shader_module_tracker != nullptr) {
-    (*shader_module_tracker)->SetDestroyed();
-  }
+  // Remove the shader module from the map.
+  MutexType local_mutex;
+  ScopedLock scoped_lock(local_mutex);
+  auto* shader_module_map =
+      device_data->shader_modules_data.Access(&scoped_lock);
+  shader_module_map->erase(shaderModule);
 }
 
 //

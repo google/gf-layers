@@ -20,7 +20,6 @@
 #include <fstream>
 #include <memory>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"

@@ -48,7 +48,7 @@ class ProtectedTinyStaleMap {
   using InternalMapType = MapTemplate<KeyType, ValueType>;
   using ThreadLocalCacheType = std::pair<KeyType, ValueType*>;
 
-  ValueType* Get(KeyType key) {
+  ValueType* Get(const KeyType& key) {
     // If we allowed removal from the map then this method could return stale
     // values due to its thread-local cache. E.g. if one thread removed an entry
     // from the map, then another thread might still see the cached entry. This
@@ -91,7 +91,7 @@ class ProtectedTinyStaleMap {
     return result;
   }
 
-  void Put(KeyType key, ValueType value) {
+  void Put(const KeyType& key, ValueType value) {
     ScopedLock lock(mutex_);
     map_[key] = std::move(value);
   }
@@ -113,7 +113,7 @@ class ProtectedMap {
   // This is guaranteed for std::unordered_map.
   using InternalMapType = MapTemplate<KeyType, ValueType>;
 
-  ValueType* Get(KeyType key) {
+  ValueType* Get(const KeyType& key) {
     ScopedLock lock(mutex_);
     ValueType* result = nullptr;
     auto it = map_.find(key);
@@ -123,9 +123,14 @@ class ProtectedMap {
     return result;
   }
 
-  bool Put(const KeyType key, ValueType value) {
+  bool Put(const KeyType& key, ValueType value) {
     ScopedLock lock(mutex_);
     return map_.emplace(key, std::move(value)).second;
+  }
+
+  bool Remove(const KeyType& key) {
+    ScopedLock lock(mutex_);
+    return map_.erase(key) != 0;
   }
 
   InternalMapType* Access(ScopedLock* lock) {

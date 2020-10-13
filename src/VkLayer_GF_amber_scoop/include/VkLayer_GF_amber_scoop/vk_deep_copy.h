@@ -46,7 +46,7 @@ T* CopyArray(T const* p_data, uint64_t num_elements) {
 }
 
 // Commands for making a deep / recursive copy of Vulkan structs. Each DeepCopy
-// function has associated DeepDelete function for freeing the memory in the
+// function has an associated DeepDelete function for freeing the memory in the
 // DeepCopy. Typically these functions are called from constructors and
 // destructors of gf_layers::amber_scoop_layer::CmdXXXX structs. See
 // vulkan_commands.h.

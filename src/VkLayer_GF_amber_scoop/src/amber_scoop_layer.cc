@@ -20,7 +20,6 @@
 #include <array>
 #include <cstring>
 #include <memory>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -212,14 +211,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
           // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
           graphics_pipeline_data->GetCreateInfo().pStages[stage_idx].module;
 
-      std::shared_ptr<ShaderModuleData> shader_module_data =
-          *device_data->shader_modules_data.Get(shader_module);
+      std::shared_ptr<ShaderModuleData>* shader_module_data =
+          device_data->shader_modules_data.Get(shader_module);
 
       // All shader modules should be tracked.
       DEBUG_ASSERT(shader_module_data != nullptr);
 
       graphics_pipeline_data->AddShaderModule(shader_module,
-                                              shader_module_data);
+                                              *shader_module_data);
     }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -246,7 +245,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
     // Create a ShaderModuleData object to keep track of the shader module's
     // lifetime.
     device_data->shader_modules_data.Put(
-        *pShaderModule, std::make_unique<ShaderModuleData>(*pCreateInfo));
+        *pShaderModule, std::make_shared<ShaderModuleData>(*pCreateInfo));
   }
   return result;
 }
@@ -264,11 +263,7 @@ void vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
   device_data->vkDestroyShaderModule(device, shaderModule, pAllocator);
 
   // Remove the shader module from the map.
-  MutexType local_mutex;
-  ScopedLock scoped_lock(local_mutex);
-  auto* shader_module_map =
-      device_data->shader_modules_data.Access(&scoped_lock);
-  shader_module_map->erase(shaderModule);
+  device_data->shader_modules_data.Remove(shaderModule);
 }
 
 //

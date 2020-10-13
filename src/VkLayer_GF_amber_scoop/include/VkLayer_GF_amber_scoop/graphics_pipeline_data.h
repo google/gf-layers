@@ -41,18 +41,16 @@ class GraphicsPipelineData
   GraphicsPipelineData& operator=(const GraphicsPipelineData&) = delete;
   GraphicsPipelineData& operator=(GraphicsPipelineData&&) = delete;
 
-  // Adds the given |shader module| to the map of shader modules used by this
-  // pipeline. This function should be called from vkCreateGraphicsPipelines
-  // function.
+  // Adds the given |shader_module| to the map of shader modules used by this
+  // pipeline.
   void AddShaderModule(
       VkShaderModule shader_module,
       const std::shared_ptr<ShaderModuleData>& shader_module_data) {
     shader_modules_.emplace(shader_module, shader_module_data);
   }
 
-  // Returns reference to the ShaderModuleData related to the given
-  // |shader_module|. Returns nullptr if the given |shader_module| is not used
-  // by this pipeline.
+  // Returns the ShaderModuleData related to the given |shader_module|, or
+  // nullptr if the given |shader_module| is not used by this pipeline.
   ShaderModuleData* GetShaderModuleData(VkShaderModule shader_module) const {
     ShaderModuleData* result = nullptr;
     auto it = shader_modules_.find(shader_module);

@@ -69,11 +69,11 @@ struct DeviceData {
   ProtectedMap<VkCommandBuffer, CommandBufferData> command_buffers_data;
   ProtectedMap<VkPipeline, std::unique_ptr<GraphicsPipelineData>>
       graphics_pipelines;
-  // Map of shader modules. Shared pointers are used because all of the
-  // pipelines using the shader module also has reference to it.
-  // |ShaderModuleData| will be deleted when the last pipeline using it is
-  // destroyed and the shader module itself is destroyed via
-  // vkDestroyShaderModule.
+
+  // Map of shader modules. Shared pointers are used because
+  // |GraphicsPipelineData| may also hold a reference. |ShaderModuleData| will
+  // be deleted when the last pipeline using it is destroyed and the shader
+  // module itself is destroyed via vkDestroyShaderModule.
   ProtectedMap<VkShaderModule, std::shared_ptr<ShaderModuleData>>
       shader_modules_data;
 };

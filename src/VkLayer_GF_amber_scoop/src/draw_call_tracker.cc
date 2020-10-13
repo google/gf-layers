@@ -39,126 +39,11 @@
 
 namespace gf_layers::amber_scoop_layer {
 
-static std::string DisassembleShaderModule(
-    const VkShaderModuleCreateInfo& create_info);
+namespace {
 
-void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
-                                     uint32_t first_vertex,
-                                     uint32_t vertex_count,
-                                     uint32_t first_instance,
-                                     uint32_t instance_count) {
-  // Silence unused parameter warnings.
-  // TODO(ilkkasaa): remove these when they are used.
-  (void)first_vertex;
-  (void)vertex_count;
-
-  // Graphics pipeline must be bound.
-  DEBUG_ASSERT(draw_call_state_.graphics_pipeline);
-  DEBUG_ASSERT(draw_call_state_.current_render_pass);
-
-  const uint64_t current_draw_call = global_data_->current_draw_call;
-  // Return if current draw call should not be captured.
-  if (current_draw_call < global_data_->settings.start_draw_call ||
-      current_draw_call > global_data_->settings.last_draw_call) {
-    global_data_->current_draw_call++;
-    return;
-  }
-  global_data_->current_draw_call++;
-
-  auto* device_data =
-      global_data_->device_map.Get(DeviceKey(draw_call_state_.queue))->get();
-
-  VkPipelineShaderStageCreateInfo* vertex_shader = nullptr;
-  VkPipelineShaderStageCreateInfo* fragment_shader = nullptr;
-  const GraphicsPipelineData* graphics_pipeline_data =
-      device_data->graphics_pipelines.Get(draw_call_state_.graphics_pipeline)
-          ->get();
-
-  for (uint32_t stageIndex = 0;
-       stageIndex < graphics_pipeline_data->GetCreateInfo().stageCount;
-       stageIndex++) {
-    const auto& stage_create_info =
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        graphics_pipeline_data->GetCreateInfo().pStages[stageIndex];
-    if (stage_create_info.stage == VK_SHADER_STAGE_VERTEX_BIT) {
-      vertex_shader =
-          const_cast<VkPipelineShaderStageCreateInfo*>(&stage_create_info);
-    } else if (stage_create_info.stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
-      fragment_shader =
-          const_cast<VkPipelineShaderStageCreateInfo*>(&stage_create_info);
-    } else {
-      LOG("Shader stage not handled.");
-      RUNTIME_ASSERT(false);
-    }
-  }
-  // Both vertex and fragment shaders are required.
-  if (vertex_shader == nullptr || fragment_shader == nullptr) {
-    throw std::runtime_error("Missing vertex or fragment shader.");
-  }
-
-  // Initialize string streams for different parts of the amber file.
-  std::ostringstream buffer_declaration_str;
-  // TODO(ilkkasaa): add other string streams
-
-  buffer_declaration_str << "BUFFER ...";
-
-  std::string amber_file_name = global_data_->settings.output_file_prefix +
-                                "_" + std::to_string(current_draw_call) +
-                                ".amber";
-
-  std::ofstream amber_file;
-  amber_file.open(amber_file_name, std::ios::trunc | std::ios::out);
-
-  amber_file << "#!amber" << std::endl << std::endl;
-
-  graphics_pipeline_data->GetShaderModuleData(vertex_shader->module);
-
-  amber_file << "SHADER vertex vertex_shader SPIRV-ASM" << std::endl;
-  amber_file << DisassembleShaderModule(
-                    graphics_pipeline_data
-                        ->GetShaderModuleData(vertex_shader->module)
-                        ->GetCreateInfo())
-             << std::endl;
-  amber_file << "END" << std::endl << std::endl;
-
-  amber_file << "SHADER fragment fragment_shader SPIRV-ASM" << std::endl;
-  amber_file << DisassembleShaderModule(
-                    graphics_pipeline_data
-                        ->GetShaderModuleData(fragment_shader->module)
-                        ->GetCreateInfo())
-             << std::endl;
-  amber_file << "END" << std::endl << std::endl;
-
-  // Pipeline
-  amber_file << "PIPELINE graphics pipeline" << std::endl;
-  amber_file << "  ATTACH vertex_shader";
-  amber_file << std::endl;
-  amber_file << "  ATTACH fragment_shader";
-  // TODO(ilkkasaa): add other pipeline contents here
-  amber_file << "END" << std::endl << std::endl;  // PIPELINE
-
-  // TODO(ilkkasaa): get primitive topology from VkGraphicsPipelineCreateInfo
-  const std::string topology = "TODO";
-
-  if (index_count > 0) {
-    amber_file << "RUN pipeline DRAW_ARRAY AS " << topology
-               << " INDEXED START_IDX " << first_index << " COUNT "
-               << index_count;
-  } else {
-    amber_file << "RUN pipeline DRAW_ARRAY AS " << topology;
-  }
-  if (instance_count > 0) {
-    amber_file << " START_INSTANCE " << first_instance << " INSTANCE_COUNT "
-               << instance_count;
-  }
-  amber_file << std::endl;
-}
-
-// Helper functions used only in this file.
-
-static std::string DisassembleShaderModule(
+std::string DisassembleShaderModule(
     const VkShaderModuleCreateInfo& create_info) {
-  // Get SPIR-V shader module number.
+  // Get SPIR-V shader module version.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   uint32_t version_word = create_info.pCode[1];
   uint8_t major_version = GetSpirvVersionMajorPart(version_word);
@@ -214,6 +99,115 @@ static std::string DisassembleShaderModule(
   tools.Disassemble(binary, &disassembly, SPV_BINARY_TO_TEXT_OPTION_INDENT);
 
   return disassembly;
+}
+}  // namespace
+
+void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
+                                     uint32_t first_vertex,
+                                     uint32_t vertex_count,
+                                     uint32_t first_instance,
+                                     uint32_t instance_count) {
+  // Silence unused parameter warnings.
+  // TODO(ilkkasaa): remove these when they are used.
+  (void)first_vertex;
+  (void)vertex_count;
+
+  // Graphics pipeline must be bound.
+  DEBUG_ASSERT(draw_call_state_.graphics_pipeline);
+  DEBUG_ASSERT(draw_call_state_.current_render_pass);
+
+  const uint64_t current_draw_call = global_data_->current_draw_call++;
+
+  // Return if current draw call should not be captured.
+  if (current_draw_call < global_data_->settings.start_draw_call ||
+      current_draw_call > global_data_->settings.last_draw_call) {
+    return;
+  }
+
+  DeviceData* device_data =
+      global_data_->device_map.Get(DeviceKey(draw_call_state_.queue))->get();
+
+  const VkPipelineShaderStageCreateInfo* vertex_shader = nullptr;
+  const VkPipelineShaderStageCreateInfo* fragment_shader = nullptr;
+  const GraphicsPipelineData* graphics_pipeline_data =
+      device_data->graphics_pipelines.Get(draw_call_state_.graphics_pipeline)
+          ->get();
+
+  for (uint32_t stageIndex = 0;
+       stageIndex < graphics_pipeline_data->GetCreateInfo().stageCount;
+       stageIndex++) {
+    const VkPipelineShaderStageCreateInfo& stage_create_info =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        graphics_pipeline_data->GetCreateInfo().pStages[stageIndex];
+    if (stage_create_info.stage == VK_SHADER_STAGE_VERTEX_BIT) {
+      vertex_shader = &stage_create_info;
+    } else if (stage_create_info.stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
+      fragment_shader = &stage_create_info;
+    } else {
+      LOG("Shader stage not handled.");
+      RUNTIME_ASSERT(false);
+    }
+  }
+  // Both vertex and fragment shaders are required.
+  if (vertex_shader == nullptr || fragment_shader == nullptr) {
+    LOG("Missing vertex or fragment shader.");
+    RUNTIME_ASSERT(false);
+  }
+
+  // Initialize string streams for different parts of the amber file.
+  std::ostringstream buffer_declaration_str;
+  // TODO(ilkkasaa): add other string streams
+
+  buffer_declaration_str << "BUFFER ...";
+
+  std::string amber_file_name = global_data_->settings.output_file_prefix +
+                                "_" + std::to_string(current_draw_call) +
+                                ".amber";
+
+  std::ofstream amber_file;
+  amber_file.open(amber_file_name, std::ios::trunc | std::ios::out);
+
+  amber_file << "#!amber" << std::endl << std::endl;
+
+  amber_file << "SHADER vertex vertex_shader SPIRV-ASM" << std::endl;
+  amber_file << DisassembleShaderModule(
+                    graphics_pipeline_data
+                        ->GetShaderModuleData(vertex_shader->module)
+                        ->GetCreateInfo())
+             << std::endl;
+  amber_file << "END" << std::endl << std::endl;
+
+  amber_file << "SHADER fragment fragment_shader SPIRV-ASM" << std::endl;
+  amber_file << DisassembleShaderModule(
+                    graphics_pipeline_data
+                        ->GetShaderModuleData(fragment_shader->module)
+                        ->GetCreateInfo())
+             << std::endl;
+  amber_file << "END" << std::endl << std::endl;
+
+  // Pipeline
+  amber_file << "PIPELINE graphics pipeline" << std::endl;
+  amber_file << "  ATTACH vertex_shader";
+  amber_file << std::endl;
+  amber_file << "  ATTACH fragment_shader";
+  // TODO(ilkkasaa): add other pipeline contents here
+  amber_file << "END" << std::endl << std::endl;  // PIPELINE
+
+  // TODO(ilkkasaa): get primitive topology from VkGraphicsPipelineCreateInfo
+  const std::string topology = "TODO";
+
+  if (index_count > 0) {
+    amber_file << "RUN pipeline DRAW_ARRAY AS " << topology
+               << " INDEXED START_IDX " << first_index << " COUNT "
+               << index_count;
+  } else {
+    amber_file << "RUN pipeline DRAW_ARRAY AS " << topology;
+  }
+  if (instance_count > 0) {
+    amber_file << " START_INSTANCE " << first_instance << " INSTANCE_COUNT "
+               << instance_count;
+  }
+  amber_file << std::endl;
 }
 
 }  // namespace gf_layers::amber_scoop_layer

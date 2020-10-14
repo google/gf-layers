@@ -86,6 +86,10 @@ VkGraphicsPipelineCreateInfo DeepCopy(
 }
 
 void DeepDelete(const VkGraphicsPipelineCreateInfo& create_info) {
+  for (uint32_t i = 0; i < create_info.stageCount; i++) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    DeepDelete(create_info.pStages[i]);
+  }
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   delete[] create_info.pStages;
 

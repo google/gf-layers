@@ -178,6 +178,95 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
 // Other intercepted vulkan functions.
 
 //
+// Our vkCreateGraphicsPipelines function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
+    VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+    const VkGraphicsPipelineCreateInfo* pCreateInfos,
+    const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(device))->get();
+
+  // Call the original function.
+  VkResult result = device_data->vkCreateGraphicsPipelines(
+      device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
+      pPipelines);
+
+  if (result != VK_SUCCESS) {
+    return result;
+  }
+
+  // Deep copy all create info structs.
+  for (uint32_t i = 0; i < createInfoCount; i++) {
+    auto graphics_pipeline_data = std::make_unique<GraphicsPipelineData>(
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        pCreateInfos[i]);
+
+    // Add the shader modules to the |graphics_pipeline_data|.
+    for (uint32_t stage_idx = 0;
+         stage_idx < graphics_pipeline_data->GetCreateInfo().stageCount;
+         stage_idx++) {
+      VkShaderModule shader_module =
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          graphics_pipeline_data->GetCreateInfo().pStages[stage_idx].module;
+
+      std::shared_ptr<ShaderModuleData>* shader_module_data =
+          device_data->shader_modules_data.Get(shader_module);
+
+      // All shader modules should be tracked.
+      DEBUG_ASSERT(shader_module_data != nullptr);
+
+      graphics_pipeline_data->AddShaderModule(shader_module,
+                                              *shader_module_data);
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    device_data->graphics_pipelines.Put(pPipelines[i],
+                                        std::move(graphics_pipeline_data));
+  }
+
+  return result;
+}
+
+//
+// Our vkCreateShaderModule function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
+    VkDevice device, VkShaderModuleCreateInfo const* pCreateInfo,
+    VkAllocationCallbacks const* pAllocator, VkShaderModule* pShaderModule) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(device))->get();
+
+  auto result = device_data->vkCreateShaderModule(device, pCreateInfo,
+                                                  pAllocator, pShaderModule);
+  if (result == VK_SUCCESS) {
+    // Create a ShaderModuleData object to keep track of the shader module's
+    // lifetime.
+    device_data->shader_modules_data.Put(
+        *pShaderModule, std::make_shared<ShaderModuleData>(*pCreateInfo));
+  }
+  return result;
+}
+
+//
+// Our vkDestroyShaderModule function.
+//
+void vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
+                           VkAllocationCallbacks const* pAllocator) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(device))->get();
+
+  // Call the original function.
+  device_data->vkDestroyShaderModule(device, shaderModule, pAllocator);
+
+  // Remove the shader module from the map.
+  device_data->shader_modules_data.Remove(shaderModule);
+}
+
+//
 // Our vkQueueSubmit function.
 //
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
@@ -459,6 +548,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     return VK_ERROR_INITIALIZATION_FAILED;            \
   }
 
+  HANDLE(vkCreateGraphicsPipelines)
+  HANDLE(vkCreateShaderModule)
+  HANDLE(vkDestroyShaderModule)
   HANDLE(vkGetDeviceProcAddr)
   HANDLE(vkQueueSubmit)
   HANDLE(vkCmdBeginRenderPass)
@@ -495,6 +587,9 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   HANDLE(vkGetDeviceProcAddr)  // Self-reference.
 
   // Other device functions that this layer intercepts:
+  HANDLE(vkCreateGraphicsPipelines)
+  HANDLE(vkCreateShaderModule)
+  HANDLE(vkDestroyShaderModule)
   HANDLE(vkQueueSubmit)
   HANDLE(vkCmdBeginRenderPass)
   HANDLE(vkCmdBindPipeline)

@@ -14,7 +14,132 @@
 
 #include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
 
+#include <cstring>
+
 namespace gf_layers::amber_scoop_layer {
+
+VkGraphicsPipelineCreateInfo DeepCopy(
+    const VkGraphicsPipelineCreateInfo& create_info) {
+  VkGraphicsPipelineCreateInfo result = create_info;
+  // Copy pStages
+  {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* new_stages =
+        new VkPipelineShaderStageCreateInfo[create_info.stageCount];
+
+    for (uint32_t i = 0; i < create_info.stageCount; i++) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      new_stages[i] = DeepCopy(create_info.pStages[i]);
+    }
+    result.pStages = new_stages;
+  }
+
+  // Copy pVertexInputState
+  {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* vertex_input_state = new VkPipelineVertexInputStateCreateInfo();
+    *vertex_input_state = *create_info.pVertexInputState;
+    // Copy pVertexBindingDescriptions
+    {
+      vertex_input_state->pVertexBindingDescriptions =
+          CopyArray(create_info.pVertexInputState->pVertexBindingDescriptions,
+                    vertex_input_state->vertexBindingDescriptionCount);
+    }
+    // Copy pVertexAttributeDescriptions
+    {
+      vertex_input_state->pVertexAttributeDescriptions = CopyArray(
+          create_info.pVertexInputState->pVertexAttributeDescriptions,
+          create_info.pVertexInputState->vertexAttributeDescriptionCount);
+    }
+    result.pVertexInputState = vertex_input_state;
+  }
+
+  // Copy pInputAssemblyState
+  {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* input_assembly_create_info =
+        new VkPipelineInputAssemblyStateCreateInfo();
+    *input_assembly_create_info = *create_info.pInputAssemblyState;
+    result.pInputAssemblyState = input_assembly_create_info;
+  }
+
+  // Copy pRasterizationState
+  {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* rasterization_state_create_info =
+        new VkPipelineRasterizationStateCreateInfo();
+    *rasterization_state_create_info = *create_info.pRasterizationState;
+    result.pRasterizationState = rasterization_state_create_info;
+  }
+
+  // Copy pDepthStencilState
+  if (create_info.pDepthStencilState != nullptr) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* depth_stencil_state_create_info =
+        new VkPipelineDepthStencilStateCreateInfo();
+    *depth_stencil_state_create_info = *create_info.pDepthStencilState;
+    result.pDepthStencilState = depth_stencil_state_create_info;
+  }
+
+  // TODO(ilkkasaa): handle deep copying of other fields.
+  return result;
+}
+
+void DeepDelete(const VkGraphicsPipelineCreateInfo& create_info) {
+  for (uint32_t i = 0; i < create_info.stageCount; i++) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    DeepDelete(create_info.pStages[i]);
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete[] create_info.pStages;
+
+  if (create_info.pVertexInputState != nullptr) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete[] create_info.pVertexInputState->pVertexBindingDescriptions;
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete[] create_info.pVertexInputState->pVertexAttributeDescriptions;
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete create_info.pVertexInputState;
+  }
+
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete create_info.pInputAssemblyState;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete create_info.pRasterizationState;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete create_info.pDepthStencilState;
+}
+
+VkPipelineShaderStageCreateInfo DeepCopy(
+    const VkPipelineShaderStageCreateInfo& create_info) {
+  VkPipelineShaderStageCreateInfo result = create_info;
+
+  // Deep copy fields from specialization info struct.
+  if (create_info.pSpecializationInfo != nullptr) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* specialization_info = new VkSpecializationInfo();
+    *specialization_info = *create_info.pSpecializationInfo;
+    specialization_info->pMapEntries =
+        CopyArray(create_info.pSpecializationInfo->pMapEntries,
+                  create_info.pSpecializationInfo->mapEntryCount);
+    specialization_info->pData = CopyArray(
+        static_cast<const char*>(create_info.pSpecializationInfo->pData),
+        create_info.pSpecializationInfo->dataSize);
+    result.pSpecializationInfo = specialization_info;
+  }
+  return result;
+}
+
+void DeepDelete(const VkPipelineShaderStageCreateInfo& create_info) {
+  if (create_info.pSpecializationInfo != nullptr) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete[] create_info.pSpecializationInfo->pMapEntries;
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete[] static_cast<const char*>(create_info.pSpecializationInfo->pData);
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete create_info.pSpecializationInfo;
+  }
+}
 
 VkRenderPassBeginInfo DeepCopy(
     VkRenderPassBeginInfo const* p_render_pass_begin_info) {
@@ -27,6 +152,20 @@ VkRenderPassBeginInfo DeepCopy(
 void DeepDelete(VkRenderPassBeginInfo const* p_render_pass_begin_info) {
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   delete[] p_render_pass_begin_info->pClearValues;
+}
+
+VkShaderModuleCreateInfo DeepCopy(const VkShaderModuleCreateInfo& create_info) {
+  VkShaderModuleCreateInfo result = create_info;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* new_code = new uint32_t[create_info.codeSize];
+  memcpy(new_code, create_info.pCode, create_info.codeSize);
+  result.pCode = new_code;
+  return result;
+}
+
+void DeepDelete(const VkShaderModuleCreateInfo& create_info) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete[] create_info.pCode;
 }
 
 }  // namespace gf_layers::amber_scoop_layer

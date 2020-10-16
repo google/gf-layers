@@ -25,6 +25,7 @@
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
 #include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
 #include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
+#include "absl/types/span.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/spirv.h"
 #include "gf_layers_layer_util/util.h"
@@ -43,8 +44,14 @@ namespace {
 std::string DisassembleShaderModule(
     const VkShaderModuleCreateInfo& create_info) {
   // Get SPIR-V shader module version.
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  uint32_t version_word = create_info.pCode[1];
+
+  // Get a span containing the shader code. |create_info.codeSize| gives the
+  // size in bytes, so we convert it to words.
+  absl::Span<const uint32_t> code =
+      absl::MakeConstSpan(create_info.pCode, create_info.codeSize / 4);
+
+  uint32_t version_word = code[1];
+
   uint8_t major_version = GetSpirvVersionMajorPart(version_word);
   uint8_t minor_version = GetSpirvVersionMinorPart(version_word);
 
@@ -85,14 +92,7 @@ std::string DisassembleShaderModule(
     RUNTIME_ASSERT(false);
   }
 
-  // Convert code size to words.
-  const auto code_size_in_words =
-      static_cast<uint32_t>(create_info.codeSize) / 4;
-
-  std::vector<uint32_t> binary(
-      create_info.pCode,
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      create_info.pCode + code_size_in_words);
+  std::vector<uint32_t> binary(code.begin(), code.end());
 
   std::string disassembly;
   tools.Disassemble(binary, &disassembly, SPV_BINARY_TO_TEXT_OPTION_INDENT);
@@ -132,12 +132,10 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
       device_data->graphics_pipelines.Get(draw_call_state_.graphics_pipeline)
           ->get();
 
-  for (uint32_t stageIndex = 0;
-       stageIndex < graphics_pipeline_data->GetCreateInfo().stageCount;
-       stageIndex++) {
-    const VkPipelineShaderStageCreateInfo& stage_create_info =
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        graphics_pipeline_data->GetCreateInfo().pStages[stageIndex];
+  for (const VkPipelineShaderStageCreateInfo& stage_create_info :
+       absl::MakeConstSpan(
+           graphics_pipeline_data->GetCreateInfo().pStages,
+           graphics_pipeline_data->GetCreateInfo().stageCount)) {
     if (stage_create_info.stage == VK_SHADER_STAGE_VERTEX_BIT) {
       vertex_shader = &stage_create_info;
     } else if (stage_create_info.stage == VK_SHADER_STAGE_FRAGMENT_BIT) {

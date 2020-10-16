@@ -198,32 +198,34 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
     return result;
   }
 
-  // Deep copy all create info structs.
+  absl::Span<const VkGraphicsPipelineCreateInfo> create_infos =
+      absl::MakeConstSpan(pCreateInfos, createInfoCount);
+  absl::Span<const VkPipeline> pipelines =
+      absl::MakeConstSpan(pPipelines, createInfoCount);
+
+  // For each pipeline created, add a |GraphicsPipelineData| to our
+  // |graphics_pipelines| map.
   for (uint32_t i = 0; i < createInfoCount; i++) {
-    auto graphics_pipeline_data = std::make_unique<GraphicsPipelineData>(
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        pCreateInfos[i]);
+    auto graphics_pipeline_data =
+        std::make_unique<GraphicsPipelineData>(create_infos[i]);
 
-    // Add the shader modules to the |graphics_pipeline_data|.
-    for (uint32_t stage_idx = 0;
-         stage_idx < graphics_pipeline_data->GetCreateInfo().stageCount;
-         stage_idx++) {
-      VkShaderModule shader_module =
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          graphics_pipeline_data->GetCreateInfo().pStages[stage_idx].module;
-
+    // For each shader module in the pipeline, add the corresponding
+    // |ShaderModuleData| to the |graphics_pipeline_data|.
+    for (const VkPipelineShaderStageCreateInfo& shader_stage_create_info :
+         absl::MakeConstSpan(
+             graphics_pipeline_data->GetCreateInfo().pStages,
+             graphics_pipeline_data->GetCreateInfo().stageCount)) {
       std::shared_ptr<ShaderModuleData>* shader_module_data =
-          device_data->shader_modules_data.Get(shader_module);
+          device_data->shader_modules_data.Get(shader_stage_create_info.module);
 
       // All shader modules should be tracked.
       DEBUG_ASSERT(shader_module_data != nullptr);
 
-      graphics_pipeline_data->AddShaderModule(shader_module,
+      graphics_pipeline_data->AddShaderModule(shader_stage_create_info.module,
                                               *shader_module_data);
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    device_data->graphics_pipelines.Put(pPipelines[i],
+    device_data->graphics_pipelines.Put(pipelines[i],
                                         std::move(graphics_pipeline_data));
   }
 

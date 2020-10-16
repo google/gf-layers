@@ -232,8 +232,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
 
   *pPropertyCount = 1;
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  pProperties[0] = kLayerProperties[0];
+  *pProperties = kLayerProperties[0];
 
   return VK_SUCCESS;
 }

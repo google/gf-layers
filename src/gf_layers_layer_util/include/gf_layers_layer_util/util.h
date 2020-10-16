@@ -22,6 +22,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "absl/base/optimization.h"
+
 namespace gf_layers {
 using MutexType = std::mutex;
 
@@ -70,8 +72,8 @@ class ProtectedTinyStaleMap {
     // potentially invalid handle (racing on the handle creation itself).
 
     // Use thread-local cache to avoid mutex and map lookup in most cases.
-    ThreadLocalCacheType& thread_local_cache = get_thread_local_cache();
-    if (thread_local_cache.first == key) {
+    ThreadLocalCacheType& thread_local_cache = GetThreadLocalCache();
+    if (ABSL_PREDICT_TRUE(thread_local_cache.first == key)) {
       return thread_local_cache.second;
     }
 
@@ -97,8 +99,9 @@ class ProtectedTinyStaleMap {
   }
 
  private:
-  ThreadLocalCacheType& get_thread_local_cache() {
-    static thread_local ThreadLocalCacheType thread_local_cache;
+  ThreadLocalCacheType& GetThreadLocalCache() {
+    ABSL_CACHELINE_ALIGNED static thread_local ThreadLocalCacheType
+        thread_local_cache;
     return thread_local_cache;
   }
 

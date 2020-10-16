@@ -26,6 +26,7 @@
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
+#include "absl/types/span.h"
 #include "gf_layers_layer_util/logging.h"
 #include "gf_layers_layer_util/settings.h"
 #include "gf_layers_layer_util/util.h"
@@ -197,32 +198,34 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
     return result;
   }
 
-  // Deep copy all create info structs.
+  absl::Span<const VkGraphicsPipelineCreateInfo> create_infos =
+      absl::MakeConstSpan(pCreateInfos, createInfoCount);
+  absl::Span<const VkPipeline> pipelines =
+      absl::MakeConstSpan(pPipelines, createInfoCount);
+
+  // For each pipeline created, add a |GraphicsPipelineData| to our
+  // |graphics_pipelines| map.
   for (uint32_t i = 0; i < createInfoCount; i++) {
-    auto graphics_pipeline_data = std::make_unique<GraphicsPipelineData>(
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        pCreateInfos[i]);
+    auto graphics_pipeline_data =
+        std::make_unique<GraphicsPipelineData>(create_infos[i]);
 
-    // Add the shader modules to the |graphics_pipeline_data|.
-    for (uint32_t stage_idx = 0;
-         stage_idx < graphics_pipeline_data->GetCreateInfo().stageCount;
-         stage_idx++) {
-      VkShaderModule shader_module =
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          graphics_pipeline_data->GetCreateInfo().pStages[stage_idx].module;
-
+    // For each shader module in the pipeline, add the corresponding
+    // |ShaderModuleData| to the |graphics_pipeline_data|.
+    for (const VkPipelineShaderStageCreateInfo& shader_stage_create_info :
+         absl::MakeConstSpan(
+             graphics_pipeline_data->GetCreateInfo().pStages,
+             graphics_pipeline_data->GetCreateInfo().stageCount)) {
       std::shared_ptr<ShaderModuleData>* shader_module_data =
-          device_data->shader_modules_data.Get(shader_module);
+          device_data->shader_modules_data.Get(shader_stage_create_info.module);
 
       // All shader modules should be tracked.
       DEBUG_ASSERT(shader_module_data != nullptr);
 
-      graphics_pipeline_data->AddShaderModule(shader_module,
+      graphics_pipeline_data->AddShaderModule(shader_stage_create_info.module,
                                               *shader_module_data);
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    device_data->graphics_pipelines.Put(pPipelines[i],
+    device_data->graphics_pipelines.Put(pipelines[i],
                                         std::move(graphics_pipeline_data));
   }
 
@@ -282,17 +285,12 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
   DeviceData* device_data =
       global_data->device_map.Get(DeviceKey(queue))->get();
 
-  // Go through each queue submit.
-  for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
-    // Go through each command buffer in each submit.
-    for (uint32_t cmd_buffer_idx = 0;
-         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-         cmd_buffer_idx < pSubmits[submit_idx].commandBufferCount;
-         cmd_buffer_idx++) {
-      VkCommandBuffer command_buffer =
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          pSubmits[submit_idx].pCommandBuffers[cmd_buffer_idx];
-
+  // For each queue submit...
+  for (const VkSubmitInfo& submit_info :
+       absl::MakeConstSpan(pSubmits, submitCount)) {
+    // For each command buffer...
+    for (const VkCommandBuffer& command_buffer : absl::MakeConstSpan(
+             submit_info.pCommandBuffers, submit_info.commandBufferCount)) {
       CommandBufferData* command_buffer_data =
           device_data->command_buffers_data.Get(command_buffer);
 
@@ -354,8 +352,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
 
   *pPropertyCount = 1;
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  pProperties[0] = kLayerProperties[0];
+  *pProperties = kLayerProperties[0];
 
   return VK_SUCCESS;
 }

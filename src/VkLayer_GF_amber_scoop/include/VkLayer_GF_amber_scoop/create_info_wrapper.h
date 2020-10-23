@@ -33,13 +33,15 @@ class CreateInfoWrapper {
   explicit CreateInfoWrapper(const CreateInfoType& create_info)
       : create_info_(DeepCopy(create_info)) {}
 
+  // Default move constructor and move assign operator.
+  CreateInfoWrapper(CreateInfoWrapper&& other) noexcept = default;
+  CreateInfoWrapper& operator=(CreateInfoWrapper&& other) noexcept = default;
+
   virtual ~CreateInfoWrapper() { DeepDelete(create_info_); }
 
-  // Disabled copy/move constructors and copy/move assign operators.
+  // Disabled copy constructor and copy assign operator.
   CreateInfoWrapper(const CreateInfoWrapper&) = delete;
-  CreateInfoWrapper(CreateInfoWrapper&&) = delete;
   CreateInfoWrapper& operator=(const CreateInfoWrapper&) = delete;
-  CreateInfoWrapper& operator=(CreateInfoWrapper&&) = delete;
 
   // Returns the create info struct.
   [[nodiscard]] const CreateInfoType& GetCreateInfo() const {
@@ -52,6 +54,7 @@ class CreateInfoWrapper {
 
 // Type aliases for create info structs wrapped to CreateInfoWrapper.
 
+using BufferData = CreateInfoWrapper<VkBufferCreateInfo>;
 using ShaderModuleData = CreateInfoWrapper<VkShaderModuleCreateInfo>;
 
 }  // namespace gf_layers::amber_scoop_layer

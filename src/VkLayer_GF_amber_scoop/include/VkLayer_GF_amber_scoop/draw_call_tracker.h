@@ -18,10 +18,12 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
+#include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 
 namespace gf_layers::amber_scoop_layer {
 
@@ -31,6 +33,21 @@ namespace gf_layers::amber_scoop_layer {
 // responsible for generating the Amber files. See HandleDrawCall function.
 class DrawCallTracker {
  public:
+  // Struct used to store index buffer binding information from
+  // |vkCmdBindIndexBuffer| command.
+  struct IndexBufferBinding {
+    VkBuffer buffer;
+    VkDeviceSize offset;
+    VkIndexType index_type;
+  };
+
+  // Struct used to store vertex buffer binding information from
+  // |vkCmdBindVertexBuffers| command.
+  struct VertexBufferBinding {
+    VkBuffer buffer;
+    VkDeviceSize offset;
+  };
+
   // DrawCallState is a container for the state data.
   struct DrawCallState {
     VkCommandBuffer command_buffer;
@@ -38,13 +55,15 @@ class DrawCallTracker {
     VkRenderPassBeginInfo* current_render_pass;
     uint32_t current_subpass;
     VkPipeline graphics_pipeline;
+    IndexBufferBinding bound_index_buffer;
     std::vector<uint8_t> push_constant_data;
-    // Map of vertex buffer bindings. Key is the binding number and value is the
-    // buffer handle.
-    std::unordered_map<uint32_t, VkBuffer> bound_vertex_buffers;
-    // Map of vertex buffer offsets. Key is the binding number of the buffer and
-    // value is the vertex buffer offset.
-    std::unordered_map<uint32_t, VkDeviceSize> vertex_buffer_offsets;
+    // Map of vertex buffer bindings and offsets. Key is the binding number and
+    // value is a struct of buffer handle and offset.
+    std::unordered_map<uint32_t, VertexBufferBinding> bound_vertex_buffers;
+    // List of pipeline barrier commands. This is used to keep list of pipeline
+    // barriers that may affect the data used in a draw call that will be
+    // captured, i.e. barriers that have interesting bits set in |dstStageMask|.
+    std::vector<const CmdPipelineBarrier*> pipeline_barriers;
   };
 
   explicit DrawCallTracker(GlobalData* global_data)
@@ -60,6 +79,19 @@ class DrawCallTracker {
                       uint32_t first_instance, uint32_t instance_count);
 
  private:
+  // Creates the part of the Amber file where the index buffers are declared.
+  // Parameters:
+  // |device_data| Pointer to device data.
+  // |index_count| Index count from the draw command.
+  // |declaration_string_stream| String stream where the buffer declarations
+  // will be collected.
+  // |pipeline_string_stream| String stream where the pipeline definitions will
+  // be collected.
+  void CreateIndexBufferDeclarations(
+      DeviceData* device_data, uint32_t index_count,
+      std::ostringstream& declaration_string_stream,
+      std::ostringstream& pipeline_string_stream);
+
   DrawCallState draw_call_state_ = {};
   // Pointer to the global data. Used in HandleDrawCall function.
   GlobalData* global_data_;

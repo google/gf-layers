@@ -18,6 +18,20 @@
 
 namespace gf_layers::amber_scoop_layer {
 
+VkBufferCreateInfo DeepCopy(const VkBufferCreateInfo& create_info) {
+  VkBufferCreateInfo result = create_info;
+  result.pQueueFamilyIndices = CopyArray(create_info.pQueueFamilyIndices,
+                                         create_info.queueFamilyIndexCount);
+  return result;
+}
+
+void DeepDelete(const VkBufferCreateInfo& create_info) {
+  if (create_info.queueFamilyIndexCount > 0) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete[] create_info.pQueueFamilyIndices;
+  }
+}
+
 VkGraphicsPipelineCreateInfo DeepCopy(
     const VkGraphicsPipelineCreateInfo& create_info) {
   VkGraphicsPipelineCreateInfo result = create_info;

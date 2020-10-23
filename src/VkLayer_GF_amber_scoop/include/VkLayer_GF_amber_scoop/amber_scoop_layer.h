@@ -41,12 +41,14 @@ struct InstanceData {
   // vkEnumerateDeviceExtensionProperties.
   PFN_vkEnumerateDeviceExtensionProperties vkEnumerateDeviceExtensionProperties;
 
-  // Other instance functions: (none)
+  // Other instance functions: (used but not intercepted)
+  PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties;
 };
 
 struct DeviceData {
   VkDevice device = {};
   InstanceData* instance_data = {};
+  VkPhysicalDevice physical_device = {};
 
   // Most layers must store this. Required to implement vkGetDeviceProcAddr.
   // Should not be used otherwise; all required device function pointers
@@ -55,6 +57,10 @@ struct DeviceData {
 
   // Other device functions:
 
+  PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers = {};
+  PFN_vkFreeCommandBuffers vkFreeCommandBuffers = {};
+  PFN_vkCreateBuffer vkCreateBuffer = {};
+  PFN_vkDestroyBuffer vkDestroyBuffer = {};
   PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = {};
   PFN_vkCreateShaderModule vkCreateShaderModule = {};
   PFN_vkDestroyShaderModule vkDestroyShaderModule = {};
@@ -62,10 +68,30 @@ struct DeviceData {
   PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass = {};
   PFN_vkCmdDraw vkCmdDraw = {};
   PFN_vkCmdDrawIndexed vkCmdDrawIndexed = {};
+  PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = {};
   PFN_vkCmdBindPipeline vkCmdBindPipeline = {};
+  PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers = {};
+  PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = {};
+
+  // Functions used by the layer but not intercepted:
+  PFN_vkAllocateMemory vkAllocateMemory = {};
+  PFN_vkFreeMemory vkFreeMemory = {};
+  PFN_vkBeginCommandBuffer vkBeginCommandBuffer = {};
+  PFN_vkEndCommandBuffer vkEndCommandBuffer = {};
+  PFN_vkBindBufferMemory vkBindBufferMemory = {};
+  PFN_vkCmdCopyBuffer vkCmdCopyBuffer = {};
+  PFN_vkCreateFence vkCreateFence = {};
+  PFN_vkDestroyFence vkDestroyFence = {};
+  PFN_vkGetBufferMemoryRequirements vkGetBufferMemoryRequirements = {};
+  PFN_vkInvalidateMappedMemoryRanges vkInvalidateMappedMemoryRanges = {};
+  PFN_vkMapMemory vkMapMemory = {};
+  PFN_vkQueueWaitIdle vkQueueWaitIdle = {};
+  PFN_vkUnmapMemory vkUnmapMemory = {};
+  PFN_vkWaitForFences vkWaitForFences = {};
 
   // Tracked device data:
 
+  ProtectedMap<VkBuffer, BufferData> buffers;
   ProtectedMap<VkCommandBuffer, CommandBufferData> command_buffers_data;
   ProtectedMap<VkPipeline, std::unique_ptr<GraphicsPipelineData>>
       graphics_pipelines;

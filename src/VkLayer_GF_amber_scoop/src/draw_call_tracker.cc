@@ -16,13 +16,17 @@
 
 #include <vulkan/vulkan.h>
 
+#include <algorithm>
 #include <atomic>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
+#include "VkLayer_GF_amber_scoop/buffer_copy.h"
+#include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
 #include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
 #include "absl/types/span.h"
@@ -153,19 +157,30 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
 
   // Initialize string streams for different parts of the amber file.
   std::ostringstream buffer_declaration_str;
+  std::ostringstream pipeline_str_stream;
   // TODO(ilkkasaa): add other string streams
 
-  buffer_declaration_str << "BUFFER ...";
+  // Pipeline
+  pipeline_str_stream << "PIPELINE graphics pipeline" << std::endl;
+  pipeline_str_stream << "  ATTACH vertex_shader" << std::endl;
+  pipeline_str_stream << "  ATTACH fragment_shader" << std::endl;
+
+  CreateIndexBufferDeclarations(device_data, index_count,
+                                buffer_declaration_str, pipeline_str_stream);
+
+  // End pipeline
+  pipeline_str_stream << "END" << std::endl << std::endl;
 
   std::string amber_file_name = global_data_->settings.output_file_prefix +
                                 "_" + std::to_string(current_draw_call) +
                                 ".amber";
 
+  // Start generating the Amber file.
   std::ofstream amber_file;
   amber_file.open(amber_file_name, std::ios::trunc | std::ios::out);
 
+  // Add shader modules.
   amber_file << "#!amber" << std::endl << std::endl;
-
   amber_file << "SHADER vertex vertex_shader SPIRV-ASM" << std::endl;
   amber_file << DisassembleShaderModule(
                     graphics_pipeline_data
@@ -173,7 +188,6 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
                         ->GetCreateInfo())
              << std::endl;
   amber_file << "END" << std::endl << std::endl;
-
   amber_file << "SHADER fragment fragment_shader SPIRV-ASM" << std::endl;
   amber_file << DisassembleShaderModule(
                     graphics_pipeline_data
@@ -182,17 +196,14 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
              << std::endl;
   amber_file << "END" << std::endl << std::endl;
 
-  // Pipeline
-  amber_file << "PIPELINE graphics pipeline" << std::endl;
-  amber_file << "  ATTACH vertex_shader";
-  amber_file << std::endl;
-  amber_file << "  ATTACH fragment_shader";
-  // TODO(ilkkasaa): add other pipeline contents here
-  amber_file << "END" << std::endl << std::endl;  // PIPELINE
+  // Append string streams to the Amber file.
+  amber_file << buffer_declaration_str.str();
+  amber_file << pipeline_str_stream.str();
 
   // TODO(ilkkasaa): get primitive topology from VkGraphicsPipelineCreateInfo
   const std::string topology = "TODO";
 
+  // Add run commands.
   if (index_count > 0) {
     amber_file << "RUN pipeline DRAW_ARRAY AS " << topology
                << " INDEXED START_IDX " << first_index << " COUNT "
@@ -205,6 +216,80 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
                << instance_count;
   }
   amber_file << std::endl;
+
+  amber_file.close();
+}
+
+void DrawCallTracker::CreateIndexBufferDeclarations(
+    DeviceData* device_data, uint32_t index_count,
+    std::ostringstream& declaration_string_stream,
+    std::ostringstream& pipeline_string_stream) {
+  auto* index_buffer = draw_call_state_.bound_index_buffer.buffer;
+  auto* buffer_create_info = device_data->buffers.Get(index_buffer);
+
+  // Get the command pool used to create th current command buffer. Command pool
+  // is used to create our own command buffer for copying the buffer contents.
+  CommandBufferData* command_buffer_data =
+      device_data->command_buffers_data.Get(draw_call_state_.command_buffer);
+  auto* command_pool = command_buffer_data->GetAllocateInfo()->commandPool;
+
+  // Create a list of pipeline barriers that should be used to synchronize
+  // the access to index buffer.
+  std::vector<const CmdPipelineBarrier*> pipeline_barriers;
+
+  // List of stage flags we are interested in.
+  static const VkPipelineStageFlags stages_flag_bits =
+      // NOLINTNEXTLINE(hicpp-signed-bitwise)
+      VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
+      VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+
+  std::copy_if(draw_call_state_.pipeline_barriers.begin(),
+               draw_call_state_.pipeline_barriers.end(),
+               std::back_inserter(pipeline_barriers),
+               [](const CmdPipelineBarrier* barrier) {
+                 return ((barrier->GetDstStageMask() & stages_flag_bits) != 0);
+               });
+
+  const VkDeviceSize& index_buffer_size =
+      buffer_create_info->GetCreateInfo().size;
+
+  auto index_buffer_copy =
+      BufferCopy(device_data, index_buffer, index_buffer_size,
+                 draw_call_state_.queue, command_pool, pipeline_barriers);
+
+  pipeline_string_stream << "  INDEX_DATA index_buffer" << std::endl;
+
+  // Amber supports only 32-bit indices. 16-bit indices will be used as
+  // 32-bit.
+  declaration_string_stream << "BUFFER index_buffer DATA_TYPE uint32 ";
+  declaration_string_stream << "DATA " << std::endl << "  ";
+
+  if (draw_call_state_.bound_index_buffer.index_type == VK_INDEX_TYPE_UINT16) {
+    // 16-bit indices
+    absl::Span<const uint16_t> index_data = absl::MakeConstSpan<>(
+        reinterpret_cast<const uint16_t*>(index_buffer_copy.GetCopiedData()),
+        index_buffer_size);
+
+    for (VkDeviceSize idx = draw_call_state_.bound_index_buffer.offset;
+         idx < index_count; idx++) {
+      declaration_string_stream << index_data[idx] << " ";
+    }
+  } else if (draw_call_state_.bound_index_buffer.index_type ==
+             VK_INDEX_TYPE_UINT32) {
+    // 32-bit indices
+    absl::Span<const uint32_t> index_data = absl::MakeConstSpan<>(
+        reinterpret_cast<const uint32_t*>(index_buffer_copy.GetCopiedData()),
+        index_buffer_size);
+
+    for (VkDeviceSize idx = draw_call_state_.bound_index_buffer.offset;
+         idx < index_count; idx++) {
+      declaration_string_stream << index_data[idx] << " ";
+    }
+  } else {
+    LOG("Index type not supported.");
+    RUNTIME_ASSERT(false);
+  }
+  declaration_string_stream << std::endl << "END" << std::endl << std::endl;
 }
 
 }  // namespace gf_layers::amber_scoop_layer

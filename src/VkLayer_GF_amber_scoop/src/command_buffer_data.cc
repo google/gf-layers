@@ -14,6 +14,8 @@
 
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 
+// <algorithm> is used by GCC's libstdc++, but not LLVM's libc++.
+#include <algorithm>  // IWYU pragma: keep
 #include <memory>
 #include <utility>
 

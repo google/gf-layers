@@ -15,13 +15,13 @@
 #ifndef VKLAYER_GF_AMBER_SCOOP_VULKAN_COMMANDS_H
 #define VKLAYER_GF_AMBER_SCOOP_VULKAN_COMMANDS_H
 
-#include <absl/types/span.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
 #include <vector>
 
 #include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
+#include "absl/types/span.h"
 
 namespace gf_layers::amber_scoop_layer {
 

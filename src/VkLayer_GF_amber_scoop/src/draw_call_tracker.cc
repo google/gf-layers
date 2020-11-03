@@ -243,6 +243,8 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
       VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
       VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
 
+  // Copy all barriers that has any of the above stage flags set as
+  // |dstStageMask|.
   std::copy_if(draw_call_state_.pipeline_barriers.begin(),
                draw_call_state_.pipeline_barriers.end(),
                std::back_inserter(pipeline_barriers),
@@ -250,46 +252,54 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
                  return ((barrier->GetDstStageMask() & stages_flag_bits) != 0);
                });
 
+  // Copy the buffer.
   const VkDeviceSize& index_buffer_size =
       buffer_create_info->GetCreateInfo().size;
-
   auto index_buffer_copy =
       BufferCopy(device_data, index_buffer, index_buffer_size,
                  draw_call_state_.queue, command_pool, pipeline_barriers);
 
-  pipeline_string_stream << "  INDEX_DATA index_buffer" << std::endl;
+  // Create index buffer declaration string.
 
   // Amber supports only 32-bit indices. 16-bit indices will be used as
   // 32-bit.
   declaration_string_stream << "BUFFER index_buffer DATA_TYPE uint32 ";
   declaration_string_stream << "DATA " << std::endl << "  ";
 
+  // Index data starts from the buffer beginning + offset.
+  const char* first_index_address =
+      &index_buffer_copy
+           .GetCopiedData()[draw_call_state_.bound_index_buffer.offset];
+
   if (draw_call_state_.bound_index_buffer.index_type == VK_INDEX_TYPE_UINT16) {
     // 16-bit indices
+    // Create a new span with type of |uint16_t| so the indices can be read
+    // easily.
     absl::Span<const uint16_t> index_data = absl::MakeConstSpan<>(
-        reinterpret_cast<const uint16_t*>(index_buffer_copy.GetCopiedData()),
-        index_buffer_size);
-
-    for (VkDeviceSize idx = draw_call_state_.bound_index_buffer.offset;
-         idx < index_count; idx++) {
-      declaration_string_stream << index_data[idx] << " ";
+        reinterpret_cast<const uint16_t*>(first_index_address), index_count);
+    // Append values to the index buffer string.
+    for (uint16_t index : index_data) {
+      declaration_string_stream << index << " ";
     }
   } else if (draw_call_state_.bound_index_buffer.index_type ==
              VK_INDEX_TYPE_UINT32) {
     // 32-bit indices
+    // Create a new span with type of |uint32_t| so the indices can be read
+    // easily.
     absl::Span<const uint32_t> index_data = absl::MakeConstSpan<>(
-        reinterpret_cast<const uint32_t*>(index_buffer_copy.GetCopiedData()),
-        index_buffer_size);
-
-    for (VkDeviceSize idx = draw_call_state_.bound_index_buffer.offset;
-         idx < index_count; idx++) {
-      declaration_string_stream << index_data[idx] << " ";
+        reinterpret_cast<const uint32_t*>(first_index_address), index_count);
+    // Append values to the index buffer string.
+    for (uint32_t index : index_data) {
+      declaration_string_stream << index << " ";
     }
   } else {
     LOG("Index type not supported.");
     RUNTIME_ASSERT(false);
   }
   declaration_string_stream << std::endl << "END" << std::endl << std::endl;
+
+  // Use indices in the pipeline.
+  pipeline_string_stream << "  INDEX_DATA index_buffer" << std::endl;
 }
 
 }  // namespace gf_layers::amber_scoop_layer

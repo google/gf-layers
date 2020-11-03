@@ -56,14 +56,16 @@ class BufferCopy {
   BufferCopy& operator=(const BufferCopy&) = delete;
   BufferCopy& operator=(BufferCopy&&) = delete;
 
-  // Get pointer to the copied data.
-  [[nodiscard]] const uint8_t* GetCopiedData() const {
-    return reinterpret_cast<uint8_t*>(copied_data_);
+  // Get a memory view to the copied data.
+  [[nodiscard]] const absl::Span<const char>& GetCopiedData() const {
+    return copied_data_span_;
   }
 
  private:
   // Pointer to copied data.
   void* copied_data_ = nullptr;
+  // Memory view to the copied data.
+  absl::Span<const char> copied_data_span_;
 
   // Vulkan objects used
   VkBuffer buffer_copy_ = VK_NULL_HANDLE;

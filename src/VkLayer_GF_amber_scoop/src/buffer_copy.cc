@@ -155,7 +155,7 @@ BufferCopy::BufferCopy(
     device_data_->vkWaitForFences(device, 1, &fence, VK_FALSE, ~0ULL);
   }
 
-  // Invalidate memory to make it host visible.
+  // Map and invalidate memory to make it host visible.
   {
     RequireSuccess(device_data_->vkMapMemory(device, buffer_copy_memory_, 0,
                                              buffer_size, 0, &copied_data_),
@@ -167,8 +167,12 @@ BufferCopy::BufferCopy(
     range_to_invalidate.size = VK_WHOLE_SIZE;
     RequireSuccess(device_data_->vkInvalidateMappedMemoryRanges(
                        device, 1, &range_to_invalidate),
-                   "Failed to unmap memory.");
+                   "Failed to invalidate memory.");
   }
+
+  // Create a span for the copied data so it can be accessed more safely.
+  copied_data_span_ = absl::MakeConstSpan<>(
+      reinterpret_cast<char*>(copied_data_), buffer_size);
 
   // Free resources
   device_data_->vkFreeCommandBuffers(device_data_->device, command_pool, 1,

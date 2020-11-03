@@ -171,8 +171,8 @@ BufferCopy::BufferCopy(
   }
 
   // Create a span for the copied data so it can be accessed more safely.
-  copied_data_span_ = absl::MakeConstSpan<>(
-      reinterpret_cast<char*>(copied_data_), buffer_size);
+  copied_data_span_ =
+      absl::MakeConstSpan<>(reinterpret_cast<char*>(copied_data_), buffer_size);
 
   // Free resources
   device_data_->vkFreeCommandBuffers(device_data_->device, command_pool, 1,

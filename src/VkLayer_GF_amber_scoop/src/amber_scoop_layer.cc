@@ -57,7 +57,7 @@ inline DeviceData* GetDeviceData(void* device_key) {
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "VkLayer_GF_amber_scoop",       // layerName
-    VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
+    VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion
     1,                              // implementationVersion
     "Amber scoop layer.",           // description
 }}};
@@ -256,13 +256,20 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(
   // Call the original function.
   auto result = device_data->vkAllocateCommandBuffers(device, pAllocateInfo,
                                                       pCommandBuffers);
-  if (result == VK_SUCCESS) {
-    for (uint32_t i = 0; i < pAllocateInfo->commandBufferCount; i++) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      device_data->command_buffers_data.Put(pCommandBuffers[i],
-                                            CommandBufferData(*pAllocateInfo));
-    }
+  if (result != VK_SUCCESS) {
+    return result;
   }
+
+  // Track the command buffers.
+
+  absl::Span<const VkCommandBuffer> command_buffers =
+      absl::MakeConstSpan(pCommandBuffers, pAllocateInfo->commandBufferCount);
+
+  for (VkCommandBuffer command_buffer : command_buffers) {
+    device_data->command_buffers_data.Put(command_buffer,
+                                          CommandBufferData(*pAllocateInfo));
+  }
+
   return result;
 }
 
@@ -278,9 +285,12 @@ void vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
   device_data->vkFreeCommandBuffers(device, commandPool, commandBufferCount,
                                     pCommandBuffers);
 
-  for (uint32_t i = 0; i < commandBufferCount; i++) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    device_data->command_buffers_data.Remove(pCommandBuffers[i]);
+  // Stop tracking the command buffers.
+  absl::Span<const VkCommandBuffer> command_buffers =
+      absl::MakeConstSpan(pCommandBuffers, commandBufferCount);
+
+  for (VkCommandBuffer command_buffer : command_buffers) {
+    device_data->command_buffers_data.Remove(command_buffer);
   }
 }
 
@@ -295,9 +305,7 @@ vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,
   VkBufferCreateInfo create_info = *pCreateInfo;
   // Allow vertex/index/uniform/storage buffer to be used as transfer source
   // buffer. Required if the buffer data needs to be copied from the buffer.
-  // NOLINTNEXTLINE(hicpp-signed-bitwise)
   if ((create_info.usage &
-       // NOLINTNEXTLINE(hicpp-signed-bitwise)
        (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |

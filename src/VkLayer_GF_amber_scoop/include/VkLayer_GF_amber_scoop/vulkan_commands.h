@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
-#include "absl/types/span.h"
 
 namespace gf_layers::amber_scoop_layer {
 
@@ -110,14 +109,11 @@ class CmdBindVertexBuffers : public Cmd {
  public:
   CmdBindVertexBuffers(uint32_t first_binding, uint32_t binding_count,
                        const VkBuffer* buffers, const VkDeviceSize* offsets)
-      : first_binding_(first_binding) {
-    absl::Span<const VkBuffer> buffer_span =
-        absl::MakeConstSpan<>(buffers, binding_count);
-    absl::Span<const VkDeviceSize> offsets_span =
-        absl::MakeConstSpan<>(offsets, binding_count);
-    buffers_.assign(buffer_span.begin(), buffer_span.end());
-    offsets_.assign(offsets_span.begin(), offsets_span.end());
-  }
+      : first_binding_(first_binding),
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        buffers_(buffers, buffers + binding_count),
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        offsets_(offsets, offsets + binding_count) {}
 
   // Sets vertex buffer bindings and their offsets.
   void ProcessSubmittedCommand(
@@ -190,21 +186,24 @@ class CmdPipelineBarrier : public Cmd {
       : src_stage_mask_(src_stage_mask),
         dst_stage_mask_(dst_stage_mask),
         dependency_flags_(dependency_flags) {
-    // Copy the memory barriers to vectors for easier access.
+    // Copy the barriers to vectors for easier access.
     if (memory_barrier_count > 0) {
-      absl::Span<const VkMemoryBarrier> span =
-          absl::MakeConstSpan<>(memory_barriers, memory_barrier_count);
-      memory_barriers_.assign(span.begin(), span.end());
+      memory_barriers_.assign(
+          memory_barriers,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          memory_barriers + memory_barrier_count);
     }
     if (buffer_memory_barrier_count > 0) {
-      absl::Span<const VkBufferMemoryBarrier> span = absl::MakeConstSpan<>(
-          buffer_memory_barriers, buffer_memory_barrier_count);
-      buffer_memory_barriers_.assign(span.begin(), span.end());
+      buffer_memory_barriers_.assign(
+          buffer_memory_barriers,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          buffer_memory_barriers + buffer_memory_barrier_count);
     }
     if (image_memory_barrier_count > 0) {
-      absl::Span<const VkImageMemoryBarrier> span = absl::MakeConstSpan<>(
-          image_memory_barriers, image_memory_barrier_count);
-      image_memory_barriers_.assign(span.begin(), span.end());
+      image_memory_barriers_.assign(
+          image_memory_barriers,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          image_memory_barriers + image_memory_barrier_count);
     }
   }
 

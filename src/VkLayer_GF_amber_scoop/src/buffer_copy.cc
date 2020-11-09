@@ -14,8 +14,7 @@
 
 #include "VkLayer_GF_amber_scoop/buffer_copy.h"
 
-#include <VkLayer_GF_amber_scoop/vulkan_util.h>
-
+#include "VkLayer_GF_amber_scoop/vulkan_util.h"
 #include "gf_layers_layer_util/logging.h"
 
 namespace gf_layers::amber_scoop_layer {
@@ -59,7 +58,7 @@ BufferCopy::BufferCopy(
                                                   buffer_copy_memory_, 0),
                  "Failed binding memory for buffer copy.");
 
-  // Create command buffer
+  // Create command buffer.
   VkCommandBuffer command_buffer = nullptr;
   VkCommandBufferAllocateInfo command_buffer_allocate_info = {};
   command_buffer_allocate_info.sType =
@@ -71,7 +70,7 @@ BufferCopy::BufferCopy(
                      device, &command_buffer_allocate_info, &command_buffer),
                  "Failed to allocate command buffers.");
 
-  // Record a command buffer for the copy operation.
+  // Record to the command buffer.
   VkCommandBufferBeginInfo begin_info = {};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -82,13 +81,13 @@ BufferCopy::BufferCopy(
   // Copy all global and buffer memory barriers. Set
   // VK_ACCESS_TRANSFER_READ_BIT for copied (buffer)memory barriers, so we can
   // execute a copy operation.
-  for (const auto& pipeline_barrier : pipeline_barriers) {
+  for (const CmdPipelineBarrier* pipeline_barrier : pipeline_barriers) {
     auto buffer_memory_barriers = std::vector<VkBufferMemoryBarrier>(
         pipeline_barrier->GetBufferMemoryBarriers());
     auto memory_barriers =
         std::vector<VkMemoryBarrier>(pipeline_barrier->GetMemoryBarriers());
 
-    // Set dstAccessMask(s) to VK_ACCESS_TRANSFER_READ_BIT
+    // Set dstAccessMask(s) to VK_ACCESS_TRANSFER_READ_BIT.
     for (auto& buffer_memory_barrier : buffer_memory_barriers) {
       buffer_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     }
@@ -96,23 +95,26 @@ BufferCopy::BufferCopy(
       memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     }
 
-    // clang-format off
     device_data_->vkCmdPipelineBarrier(
-        command_buffer,
-        pipeline_barrier->GetSrcStageMask(),
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        static_cast<uint32_t>(memory_barriers.size()),
-        memory_barriers.data(),
-        static_cast<uint32_t>(buffer_memory_barriers.size()),
-        buffer_memory_barriers.data(),
-        0,
-        nullptr);
-    // clang-format on
+        command_buffer,                                 // commandBuffer
+        pipeline_barrier->GetSrcStageMask(),            // srcStageMask
+        VK_PIPELINE_STAGE_TRANSFER_BIT,                 // dstStageMask
+        0,                                              // dependencyFlags
+        static_cast<uint32_t>(memory_barriers.size()),  // memoryBarrierCount
+        memory_barriers.data(),                         // pMemoryBarriers
+        static_cast<uint32_t>(
+            buffer_memory_barriers.size()),  // bufferMemoryBarrierCount
+        buffer_memory_barriers.data(),       // pBufferMemoryBarriers
+        0,                                   // imageMemoryBarrierCount
+        nullptr);                            // pImageMemoryBarriers
   }
 
-  // Copy buffer
-  VkBufferCopy copy_region = {0, 0, buffer_size};
+  // Copy buffer.
+  VkBufferCopy copy_region = {
+      0,           // srcOffset
+      0,           // dstOffset
+      buffer_size  // size
+  };
   device_data_->vkCmdCopyBuffer(command_buffer, buffer, buffer_copy_, 1,
                                 &copy_region);
 
@@ -122,19 +124,18 @@ BufferCopy::BufferCopy(
   host_copy_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
   host_copy_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
   host_copy_barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-  // clang-format off
+
   device_data_->vkCmdPipelineBarrier(
-      command_buffer,
-      VK_PIPELINE_STAGE_TRANSFER_BIT,
-      VK_PIPELINE_STAGE_HOST_BIT,
-      0,
-      1,
-      &host_copy_barrier,
-      0,
-      nullptr,
-      0,
-      nullptr);
-  // clang-format on
+      command_buffer,                  // commandBuffer
+      VK_PIPELINE_STAGE_TRANSFER_BIT,  // srcStageMask
+      VK_PIPELINE_STAGE_HOST_BIT,      // dstStageMask
+      0,                               // dependencyFlags
+      1,                               // memoryBarrierCount
+      &host_copy_barrier,              // pMemoryBarriers
+      0,                               // bufferMemoryBarrierCount
+      nullptr,                         // pBufferMemoryBarriers
+      0,                               // imageMemoryBarrierCount
+      nullptr);                        // pImageMemoryBarriers
 
   RequireSuccess(device_data_->vkEndCommandBuffer(command_buffer),
                  "Failed to record command buffer.");
@@ -172,7 +173,7 @@ BufferCopy::BufferCopy(
 
   // Create a span for the copied data so it can be accessed more safely.
   copied_data_span_ =
-      absl::MakeConstSpan<>(reinterpret_cast<char*>(copied_data_), buffer_size);
+      absl::MakeConstSpan(reinterpret_cast<char*>(copied_data_), buffer_size);
 
   // Free resources
   device_data_->vkFreeCommandBuffers(device_data_->device, command_pool, 1,

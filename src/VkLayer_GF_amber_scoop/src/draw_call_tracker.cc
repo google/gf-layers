@@ -224,14 +224,16 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
     DeviceData* device_data, uint32_t index_count,
     std::ostringstream& declaration_string_stream,
     std::ostringstream& pipeline_string_stream) {
-  auto* index_buffer = draw_call_state_.bound_index_buffer.buffer;
-  auto* buffer_create_info = device_data->buffers.Get(index_buffer);
+  VkBuffer index_buffer = draw_call_state_.bound_index_buffer.buffer;
+  BufferData* buffer_create_info = device_data->buffers.Get(index_buffer);
 
-  // Get the command pool used to create th current command buffer. Command pool
-  // is used to create our own command buffer for copying the buffer contents.
+  // Get the command pool used to create the current command buffer. The command
+  // pool is used to create our own command buffer for copying the buffer
+  // contents.
   CommandBufferData* command_buffer_data =
       device_data->command_buffers_data.Get(draw_call_state_.command_buffer);
-  auto* command_pool = command_buffer_data->GetAllocateInfo()->commandPool;
+  VkCommandPool command_pool =
+      command_buffer_data->GetAllocateInfo()->commandPool;
 
   // Create a list of pipeline barriers that should be used to synchronize
   // the access to index buffer.
@@ -239,11 +241,10 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
 
   // List of stage flags we are interested in.
   static const VkPipelineStageFlags stages_flag_bits =
-      // NOLINTNEXTLINE(hicpp-signed-bitwise)
       VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
       VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
 
-  // Copy all barriers that has any of the above stage flags set as
+  // Copy all barriers that have any of the above stage flags set as
   // |dstStageMask|.
   std::copy_if(draw_call_state_.pipeline_barriers.begin(),
                draw_call_state_.pipeline_barriers.end(),
@@ -275,7 +276,7 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
     // 16-bit indices
     // Create a new span with type of |uint16_t| so the indices can be read
     // easily.
-    absl::Span<const uint16_t> index_data = absl::MakeConstSpan<>(
+    absl::Span<const uint16_t> index_data = absl::MakeConstSpan(
         reinterpret_cast<const uint16_t*>(first_index_address), index_count);
     // Append values to the index buffer string.
     for (uint16_t index : index_data) {
@@ -286,7 +287,7 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
     // 32-bit indices
     // Create a new span with type of |uint32_t| so the indices can be read
     // easily.
-    absl::Span<const uint32_t> index_data = absl::MakeConstSpan<>(
+    absl::Span<const uint32_t> index_data = absl::MakeConstSpan(
         reinterpret_cast<const uint32_t*>(first_index_address), index_count);
     // Append values to the index buffer string.
     for (uint32_t index : index_data) {

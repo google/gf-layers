@@ -163,6 +163,12 @@ class ProtectedMap {
 // specialized for each VkInstance/VkDevice object, and thus we need to store
 // the next Vulkan function address for those functions we wish to intercept
 // so that we can call the correct function in the next layer.
+//
+// If we create dispatchable objects within our layer, we must copy the dispatch
+// table pointer from the parent object to the new child object. E.g. If we
+// create a VkCommandBuffer (via a VkDevice) then we must copy the dispatch
+// table from the VkDevice object to the new VkCommandBuffer. We provide
+// functions for this below.
 
 // Returns the VkInstance dispatch table pointer for |handle|.
 void* InstanceKey(VkInstance handle);
@@ -181,6 +187,9 @@ void* DeviceKey(VkQueue handle);
 // Returns the VkCommandBuffer dispatch table pointer (same dispatch table as
 // its VkDevice) for |handle|.
 void* DeviceKey(VkCommandBuffer handle);
+
+// Copies the dispatch table pointer from |parent| to |child|.
+void CopyDispatchTablePointer(VkDevice parent, VkCommandBuffer child);
 
 // Returns the VkLayerInstanceCreateInfo from the |pCreateInfo| given in a call
 // to vkCreateInstance. The VkLayerInstanceCreateInfo is needed to (a) obtain

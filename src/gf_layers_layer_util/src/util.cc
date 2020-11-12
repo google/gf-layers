@@ -34,6 +34,10 @@ void* DeviceKey(VkCommandBuffer handle) {
   return *reinterpret_cast<void**>(handle);
 }
 
+void CopyDispatchTablePointer(VkDevice parent, VkCommandBuffer child) {
+  *reinterpret_cast<void**>(child) = *reinterpret_cast<void**>(parent);
+}
+
 VkLayerInstanceCreateInfo* GetLayerInstanceCreateInfo(
     const VkInstanceCreateInfo* pCreateInfo) {
   // pCreateInfo->pNext is a linked list of unknown struct types, discriminated

@@ -16,10 +16,8 @@
 
 #include <vulkan/vulkan.h>
 
-#include <algorithm>
 #include <atomic>
 #include <fstream>
-#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -223,7 +221,7 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
 void DrawCallTracker::CreateIndexBufferDeclarations(
     DeviceData* device_data, uint32_t index_count,
     std::ostringstream& declaration_string_stream,
-    std::ostringstream& pipeline_string_stream) {
+    std::ostringstream& pipeline_string_stream) const {
   VkBuffer index_buffer = draw_call_state_.bound_index_buffer.buffer;
   BufferData* buffer_create_info = device_data->buffers.Get(index_buffer);
 
@@ -235,30 +233,12 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
   VkCommandPool command_pool =
       command_buffer_data->GetAllocateInfo()->commandPool;
 
-  // Create a list of pipeline barriers that should be used to synchronize
-  // the access to index buffer.
-  std::vector<const CmdPipelineBarrier*> pipeline_barriers;
-
-  // List of stage flags we are interested in.
-  static const VkPipelineStageFlags stages_flag_bits =
-      VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
-      VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
-
-  // Copy all barriers that have any of the above stage flags set as
-  // |dstStageMask|.
-  std::copy_if(draw_call_state_.pipeline_barriers.begin(),
-               draw_call_state_.pipeline_barriers.end(),
-               std::back_inserter(pipeline_barriers),
-               [](const CmdPipelineBarrier* barrier) {
-                 return ((barrier->GetDstStageMask() & stages_flag_bits) != 0);
-               });
-
   // Copy the buffer.
   const VkDeviceSize& index_buffer_size =
       buffer_create_info->GetCreateInfo().size;
   auto index_buffer_copy =
       BufferCopy(device_data, index_buffer, index_buffer_size,
-                 draw_call_state_.queue, command_pool, pipeline_barriers);
+                 draw_call_state_.queue, command_pool);
 
   // Create index buffer declaration string.
 

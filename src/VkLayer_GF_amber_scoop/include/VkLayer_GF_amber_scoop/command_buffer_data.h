@@ -48,8 +48,9 @@ class CommandBufferData {
     return command_list;
   }
 
-  // Sets the command buffer as submitted.
-  void SetSubmitted() { is_submitted_ = true; }
+  // Resets this instance to the state before adding any commands to it, i.e.
+  // clears the command list and |contains_draw_calls_| flag.
+  void ResetState();
 
   [[nodiscard]] const VkCommandBufferAllocateInfo* GetAllocateInfo() const {
     return &allocate_info_;
@@ -58,8 +59,6 @@ class CommandBufferData {
  private:
   // VkCommandBufferAllocateInfo used to allocate this command buffer.
   const VkCommandBufferAllocateInfo allocate_info_;
-  // Flag to tell if the command buffer has been submitted.
-  bool is_submitted_ = false;
   // Flag to tell if the command list contains any draw calls.
   bool contains_draw_calls_ = false;
   // List of tracked commands.

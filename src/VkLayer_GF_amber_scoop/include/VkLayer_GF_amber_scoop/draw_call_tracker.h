@@ -90,7 +90,7 @@ class DrawCallTracker {
   void CreateIndexBufferDeclarations(
       DeviceData* device_data, uint32_t index_count,
       std::ostringstream& declaration_string_stream,
-      std::ostringstream& pipeline_string_stream);
+      std::ostringstream& pipeline_string_stream) const;
 
   DrawCallState draw_call_state_ = {};
   // Pointer to the global data. Used in HandleDrawCall function.

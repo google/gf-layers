@@ -18,10 +18,8 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
-#include <vector>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
-#include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 #include "absl/types/span.h"
 
 namespace gf_layers::amber_scoop_layer {
@@ -41,12 +39,9 @@ class BufferCopy {
   // |buffer_size| Size of the source buffer.
   // |queue| Vulkan queue where the commands will be submitted to.
   // |command_pool| command pool used to allocate the commands.
-  // |pipeline_barriers| list of pipeline barriers that must be used to
-  // synchronize access to the source buffer.
   BufferCopy(DeviceData* device_data, const VkBuffer& buffer,
              VkDeviceSize buffer_size, VkQueue queue,
-             VkCommandPool command_pool,
-             const std::vector<const CmdPipelineBarrier*>& pipeline_barriers);
+             VkCommandPool command_pool);
 
   // Releases remaining Vulkan resources.
   ~BufferCopy();

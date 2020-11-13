@@ -86,13 +86,12 @@ void InitSettingsIfNeeded() {
   }
 }
 
-// Adds |command| to the list of tracked commands for |command_buffer|. Creates
-// a list of commands |command_buffer| if one doesn't already exist. Tracked
+// Adds |command| to the list of tracked commands for |command_buffer|. Tracked
 // commands will be parsed later when |command_buffer| is submitted via the
 // vkQueueSubmit function.
 void AddCommand(DeviceData* device_data, VkCommandBuffer command_buffer,
                 std::unique_ptr<Cmd> command) {
-  auto* tracked_command_buffer =
+  CommandBufferData* tracked_command_buffer =
       device_data->command_buffers_data.Get(command_buffer);
   // All of the command buffers should be tracked.
   DEBUG_ASSERT(tracked_command_buffer != nullptr);
@@ -448,16 +447,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
       CommandBufferData* command_buffer_data =
           device_data->command_buffers_data.Get(command_buffer);
 
-      // Ignore command buffers that are not tracked, i.e. command buffers that
-      // don't contain any interesting commands.
-      if (command_buffer_data == nullptr) {
-        continue;
-      }
-      // Mark the command buffer as submitted.
-      command_buffer_data->SetSubmitted();
+      // All of the command buffers should be tracked.
+      DEBUG_ASSERT(command_buffer_data != nullptr);
 
       // Skip all command buffers that don't contain any draw calls.
       if (!command_buffer_data->ContainsDrawCalls()) {
+        // Reset the command buffer data state because the command buffer has
+        // been submitted.
+        command_buffer_data->ResetState();
         continue;
       }
 
@@ -475,6 +472,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
            command_buffer_data->GetCommandList()) {
         cmd->ProcessSubmittedCommand(&draw_call_tracker);
       }
+
+      // Reset the command buffer data state because the command buffer has
+      // been submitted.
+      command_buffer_data->ResetState();
     }
   }
 

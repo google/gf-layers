@@ -16,13 +16,13 @@
 
 #include "VkLayer_GF_amber_scoop/vulkan_util.h"
 #include "gf_layers_layer_util/logging.h"
+#include "gf_layers_layer_util/util.h"
 
 namespace gf_layers::amber_scoop_layer {
 
-BufferCopy::BufferCopy(
-    DeviceData* device_data, const VkBuffer& buffer, VkDeviceSize buffer_size,
-    VkQueue queue, VkCommandPool command_pool,
-    const std::vector<const CmdPipelineBarrier*>& pipeline_barriers)
+BufferCopy::BufferCopy(DeviceData* device_data, const VkBuffer& buffer,
+                       VkDeviceSize buffer_size, VkQueue queue,
+                       VkCommandPool command_pool)
     : device_data_(device_data) {
   VkDevice device = device_data_->device;
 
@@ -70,6 +70,10 @@ BufferCopy::BufferCopy(
                      device, &command_buffer_allocate_info, &command_buffer),
                  "Failed to allocate command buffers.");
 
+  // We have created a dispatchable object, so we must set the dispatch table
+  // pointer.
+  CopyDispatchTablePointer(device, command_buffer);
+
   // Record to the command buffer.
   VkCommandBufferBeginInfo begin_info = {};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -78,43 +82,36 @@ BufferCopy::BufferCopy(
       device_data_->vkBeginCommandBuffer(command_buffer, &begin_info),
       "Failed to begin command buffer.");
 
-  // Copy all global and buffer memory barriers. Set
-  // VK_ACCESS_TRANSFER_READ_BIT for copied (buffer)memory barriers, so we can
-  // execute a copy operation.
-  for (const CmdPipelineBarrier* pipeline_barrier : pipeline_barriers) {
-    auto buffer_memory_barriers = std::vector<VkBufferMemoryBarrier>(
-        pipeline_barrier->GetBufferMemoryBarriers());
-    auto memory_barriers =
-        std::vector<VkMemoryBarrier>(pipeline_barrier->GetMemoryBarriers());
+  // Memory barrier for making sure we can safely transfer the data to a host
+  // visible memory.
+  // TODO(ilkkasaa): This barrier could be submitted only before the first
+  //   buffer copy operation. Current implementation submits the same barrier
+  //   for every buffer copy operation which is redundant.
+  VkMemoryBarrier memory_barrier;
+  memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+  memory_barrier.pNext = nullptr;
+  memory_barrier.srcAccessMask =
+      VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+  memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-    // Set dstAccessMask(s) to VK_ACCESS_TRANSFER_READ_BIT.
-    for (auto& buffer_memory_barrier : buffer_memory_barriers) {
-      buffer_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    }
-    for (auto& memory_barrier : memory_barriers) {
-      memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    }
-
-    device_data_->vkCmdPipelineBarrier(
-        command_buffer,                                 // commandBuffer
-        pipeline_barrier->GetSrcStageMask(),            // srcStageMask
-        VK_PIPELINE_STAGE_TRANSFER_BIT,                 // dstStageMask
-        0,                                              // dependencyFlags
-        static_cast<uint32_t>(memory_barriers.size()),  // memoryBarrierCount
-        memory_barriers.data(),                         // pMemoryBarriers
-        static_cast<uint32_t>(
-            buffer_memory_barriers.size()),  // bufferMemoryBarrierCount
-        buffer_memory_barriers.data(),       // pBufferMemoryBarriers
-        0,                                   // imageMemoryBarrierCount
-        nullptr);                            // pImageMemoryBarriers
-  }
+  device_data_->vkCmdPipelineBarrier(
+      command_buffer,                      // commandBuffer
+      VK_PIPELINE_STAGE_HOST_BIT |         //
+          VK_PIPELINE_STAGE_TRANSFER_BIT,  // srcStageMask
+      VK_PIPELINE_STAGE_TRANSFER_BIT,      // dstStageMask
+      0,                                   // dependencyFlags
+      1U,                                  // memoryBarrierCount
+      &memory_barrier,                     // pMemoryBarriers
+      0,                                   // bufferMemoryBarrierCount
+      nullptr,                             // pBufferMemoryBarriers
+      0,                                   // imageMemoryBarrierCount
+      nullptr);                            // pImageMemoryBarriers
 
   // Copy buffer.
-  VkBufferCopy copy_region = {
-      0,           // srcOffset
-      0,           // dstOffset
-      buffer_size  // size
-  };
+  VkBufferCopy copy_region;
+  copy_region.srcOffset = 0;
+  copy_region.dstOffset = 0;
+  copy_region.size = buffer_size;
   device_data_->vkCmdCopyBuffer(command_buffer, buffer, buffer_copy_, 1,
                                 &copy_region);
 
@@ -145,7 +142,6 @@ BufferCopy::BufferCopy(
     VkFence fence = nullptr;
     VkFenceCreateInfo create_info = {};
     create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     device_data->vkCreateFence(device, &create_info, nullptr, &fence);
 
     VkSubmitInfo submit_info = {};
@@ -154,6 +150,7 @@ BufferCopy::BufferCopy(
     submit_info.pCommandBuffers = &command_buffer;
     device_data_->vkQueueSubmit(queue, 1, &submit_info, fence);
     device_data_->vkWaitForFences(device, 1, &fence, VK_FALSE, ~0ULL);
+    device_data_->vkDestroyFence(device, fence, nullptr);
   }
 
   // Map and invalidate memory to make it host visible.

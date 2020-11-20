@@ -532,12 +532,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     return VK_ERROR_INITIALIZATION_FAILED;                \
   }
 
-  HANDLE(vkGetInstanceProcAddr)
   HANDLE(vkEnumerateDeviceExtensionProperties)
 #undef HANDLE
 
-  DEBUG_ASSERT(next_get_instance_proc_address ==
-               instance_data.vkGetInstanceProcAddr);
+  instance_data.vkGetInstanceProcAddr = next_get_instance_proc_address;
 
   GetGlobalData()->instance_map.Put(InstanceKey(*pInstance), instance_data);
 
@@ -612,12 +610,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     return VK_ERROR_INITIALIZATION_FAILED;            \
   }
 
-  HANDLE(vkGetDeviceProcAddr)
   HANDLE(vkCreateShaderModule)
 
 #undef HANDLE
 
-  DEBUG_ASSERT(next_get_device_proc_address == device_data.vkGetDeviceProcAddr);
+  device_data.vkGetDeviceProcAddr = next_get_device_proc_address;
 
   GetGlobalData()->device_map.Put(DeviceKey(*pDevice), device_data);
 

@@ -14,11 +14,11 @@
 
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
 
-#include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
-
-// <algorithm> is used by GCC's libstdc++, but not LLVM's libc++.
 #include <algorithm>  // IWYU pragma: keep
+// <algorithm> is used by GCC's libstdc++, but not LLVM's libc++.
 #include <unordered_map>
+
+#include "VkLayer_GF_amber_scoop/draw_call_tracker.h"
 
 namespace gf_layers::amber_scoop_layer {
 

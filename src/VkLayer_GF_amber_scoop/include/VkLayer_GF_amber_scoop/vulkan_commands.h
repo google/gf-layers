@@ -18,6 +18,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <vector>
 
 #include "VkLayer_GF_amber_scoop/vk_deep_copy.h"
 
@@ -74,6 +75,22 @@ class CmdBeginRenderPass : public Cmd {
   VkSubpassContents contents_;
 };
 
+class CmdBindIndexBuffer : public Cmd {
+ public:
+  CmdBindIndexBuffer(VkBuffer buffer, VkDeviceSize offset,
+                     VkIndexType index_type)
+      : buffer_(buffer), offset_(offset), index_type_(index_type) {}
+
+  // Sets the index buffer binding.
+  void ProcessSubmittedCommand(
+      DrawCallTracker* draw_call_state_tracker) override;
+
+ private:
+  VkBuffer buffer_;
+  VkDeviceSize offset_;
+  VkIndexType index_type_;
+};
+
 class CmdBindPipeline : public Cmd {
  public:
   CmdBindPipeline(VkPipelineBindPoint pipeline_bind_point, VkPipeline pipeline)
@@ -86,6 +103,26 @@ class CmdBindPipeline : public Cmd {
  private:
   VkPipelineBindPoint pipeline_bind_point_;
   VkPipeline pipeline_;
+};
+
+class CmdBindVertexBuffers : public Cmd {
+ public:
+  CmdBindVertexBuffers(uint32_t first_binding, uint32_t binding_count,
+                       const VkBuffer* buffers, const VkDeviceSize* offsets)
+      : first_binding_(first_binding),
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        buffers_(buffers, buffers + binding_count),
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        offsets_(offsets, offsets + binding_count) {}
+
+  // Sets vertex buffer bindings and their offsets.
+  void ProcessSubmittedCommand(
+      DrawCallTracker* draw_call_state_tracker) override;
+
+ private:
+  uint32_t first_binding_;
+  std::vector<VkBuffer> buffers_;
+  std::vector<VkDeviceSize> offsets_;
 };
 
 class CmdDraw : public Cmd {
@@ -133,6 +170,77 @@ class CmdDrawIndexed : public Cmd {
   uint32_t first_index_;
   int32_t vertex_offset_;
   uint32_t first_instance_;
+};
+
+class CmdPipelineBarrier : public Cmd {
+ public:
+  CmdPipelineBarrier(VkPipelineStageFlags src_stage_mask,
+                     VkPipelineStageFlags dst_stage_mask,
+                     VkDependencyFlags dependency_flags,
+                     uint32_t memory_barrier_count,
+                     const VkMemoryBarrier* memory_barriers,
+                     uint32_t buffer_memory_barrier_count,
+                     const VkBufferMemoryBarrier* buffer_memory_barriers,
+                     uint32_t image_memory_barrier_count,
+                     const VkImageMemoryBarrier* image_memory_barriers)
+      : src_stage_mask_(src_stage_mask),
+        dst_stage_mask_(dst_stage_mask),
+        dependency_flags_(dependency_flags) {
+    // Copy the barriers to vectors for easier access.
+    if (memory_barrier_count > 0) {
+      memory_barriers_.assign(
+          memory_barriers,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          memory_barriers + memory_barrier_count);
+    }
+    if (buffer_memory_barrier_count > 0) {
+      buffer_memory_barriers_.assign(
+          buffer_memory_barriers,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          buffer_memory_barriers + buffer_memory_barrier_count);
+    }
+    if (image_memory_barrier_count > 0) {
+      image_memory_barriers_.assign(
+          image_memory_barriers,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          image_memory_barriers + image_memory_barrier_count);
+    }
+  }
+
+  // Sets the index buffer binding.
+  void ProcessSubmittedCommand(
+      DrawCallTracker* draw_call_state_tracker) override;
+
+  // Getters for the member fields.
+
+  [[nodiscard]] VkPipelineStageFlags GetSrcStageMask() const {
+    return src_stage_mask_;
+  }
+  [[nodiscard]] VkPipelineStageFlags GetDstStageMask() const {
+    return dst_stage_mask_;
+  }
+  [[nodiscard]] VkDependencyFlags GetDependencyFlags() const {
+    return dependency_flags_;
+  }
+  [[nodiscard]] const std::vector<VkMemoryBarrier>& GetMemoryBarriers() const {
+    return memory_barriers_;
+  }
+  [[nodiscard]] const std::vector<VkBufferMemoryBarrier>&
+  GetBufferMemoryBarriers() const {
+    return buffer_memory_barriers_;
+  }
+  [[nodiscard]] const std::vector<VkImageMemoryBarrier>&
+  GetImageMemoryBarriers() const {
+    return image_memory_barriers_;
+  }
+
+ private:
+  VkPipelineStageFlags src_stage_mask_;
+  VkPipelineStageFlags dst_stage_mask_;
+  VkDependencyFlags dependency_flags_;
+  std::vector<VkMemoryBarrier> memory_barriers_;
+  std::vector<VkBufferMemoryBarrier> buffer_memory_barriers_;
+  std::vector<VkImageMemoryBarrier> image_memory_barriers_;
 };
 
 #pragma clang diagnostic pop

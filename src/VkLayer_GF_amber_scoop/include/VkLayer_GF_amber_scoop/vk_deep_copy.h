@@ -51,6 +51,17 @@ T* CopyArray(T const* p_data, uint64_t num_elements) {
 // destructors of gf_layers::amber_scoop_layer::CmdXXXX structs. See
 // vulkan_commands.h.
 
+// Makes a deep copy of VkBufferCreateInfo struct. The allocated
+// memory is not freed automatically. Use
+// DeepDelete(VkBufferCreateInfo const*) to recursively free all
+// the allocated memory.
+VkBufferCreateInfo DeepCopy(const VkBufferCreateInfo& create_info);
+
+// Recursively deletes all the allocated memory of the given
+// VkBufferCreateInfo struct. Should be used only for structs
+// created with associated DeepCopy(...) function.
+void DeepDelete(const VkBufferCreateInfo& create_info);
+
 // Makes a deep copy of VkGraphicsPipelineCreateInfo struct. The allocated
 // memory is not freed automatically. Use
 // DeepDelete(VkGraphicsPipelineCreateInfo const*) to recursively free all

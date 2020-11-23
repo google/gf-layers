@@ -14,6 +14,8 @@
 
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 
+// <algorithm> is used by GCC's libstdc++, but not LLVM's libc++.
+#include <algorithm>  // IWYU pragma: keep
 #include <memory>
 #include <utility>
 
@@ -22,18 +24,16 @@
 namespace gf_layers::amber_scoop_layer {
 
 void CommandBufferData::AddCommand(std::unique_ptr<Cmd> cmd) {
-  // Command buffer must be reset if it has been submitted and new commands
-  // are being added to it, so we reset our command buffer tracker.
-  if (is_submitted_) {
-    command_list.clear();
-    is_submitted_ = false;
-    contains_draw_calls_ = false;
-  }
   // Set the flag if the command being added is a draw call.
   if (cmd->IsDrawCall()) {
     contains_draw_calls_ = true;
   }
   command_list.push_back(std::move(cmd));
+}
+
+void CommandBufferData::ResetState() {
+  command_list.clear();
+  contains_draw_calls_ = false;
 }
 
 }  // namespace gf_layers::amber_scoop_layer

@@ -50,9 +50,14 @@ GlobalData global_data_;  // NOLINT(cert-err58-cpp)
 
 GlobalData* GetGlobalData() { return &global_data_; }
 
+inline DeviceData* GetDeviceData(void* device_key) {
+  GlobalData* global_data = &global_data_;
+  return global_data->device_map.Get(device_key)->get();
+}
+
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "VkLayer_GF_amber_scoop",       // layerName
-    VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
+    VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion
     1,                              // implementationVersion
     "Amber scoop layer.",           // description
 }}};
@@ -81,21 +86,15 @@ void InitSettingsIfNeeded() {
   }
 }
 
-// Adds |command| to the list of tracked commands for |command_buffer|. Creates
-// a list of commands |command_buffer| if one doesn't already exist. Tracked
+// Adds |command| to the list of tracked commands for |command_buffer|. Tracked
 // commands will be parsed later when |command_buffer| is submitted via the
 // vkQueueSubmit function.
 void AddCommand(DeviceData* device_data, VkCommandBuffer command_buffer,
                 std::unique_ptr<Cmd> command) {
-  auto* tracked_command_buffer =
+  CommandBufferData* tracked_command_buffer =
       device_data->command_buffers_data.Get(command_buffer);
-  // Check if the command buffer isn't tracked and start tracking if it isn't
-  // tracked.
-  if (tracked_command_buffer == nullptr) {
-    device_data->command_buffers_data.Put(command_buffer, CommandBufferData());
-    tracked_command_buffer =
-        device_data->command_buffers_data.Get(command_buffer);
-  }
+  // All of the command buffers should be tracked.
+  DEBUG_ASSERT(tracked_command_buffer != nullptr);
   tracked_command_buffer->AddCommand(std::move(command));
 }
 
@@ -119,6 +118,24 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
 }
 
 //
+// Our vkCmdBindIndexBuffer function.
+//
+VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer,
+                                                VkBuffer buffer,
+                                                VkDeviceSize offset,
+                                                VkIndexType indexType) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(commandBuffer))->get();
+
+  // Call the original function.
+  device_data->vkCmdBindIndexBuffer(commandBuffer, buffer, offset, indexType);
+
+  AddCommand(device_data, commandBuffer,
+             std::make_unique<CmdBindIndexBuffer>(buffer, offset, indexType));
+}
+
+//
 // Our vkCmdBindPipeline function.
 //
 VKAPI_ATTR void VKAPI_CALL
@@ -133,6 +150,24 @@ vkCmdBindPipeline(VkCommandBuffer commandBuffer,
 
   AddCommand(device_data, commandBuffer,
              std::make_unique<CmdBindPipeline>(pipelineBindPoint, pipeline));
+}
+
+//
+// Our vkCmdBindVertexBuffers function.
+//
+VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(
+    VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
+    VkBuffer const* pBuffers, VkDeviceSize const* pOffsets) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(commandBuffer))->get();
+
+  // Call the original function.
+  device_data->vkCmdBindVertexBuffers(commandBuffer, firstBinding, bindingCount,
+                                      pBuffers, pOffsets);
+  AddCommand(device_data, commandBuffer,
+             std::make_unique<CmdBindVertexBuffers>(firstBinding, bindingCount,
+                                                    pBuffers, pOffsets));
 }
 
 //
@@ -176,7 +211,131 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
                                        vertexOffset, firstInstance));
 }
 
+//
+// Our vkCmdPipelineBarrier function.
+//
+void vkCmdPipelineBarrier(VkCommandBuffer commandBuffer,
+                          VkPipelineStageFlags srcStageMask,
+                          VkPipelineStageFlags dstStageMask,
+                          VkDependencyFlags dependencyFlags,
+                          uint32_t memoryBarrierCount,
+                          VkMemoryBarrier const* pMemoryBarriers,
+                          uint32_t bufferMemoryBarrierCount,
+                          VkBufferMemoryBarrier const* pBufferMemoryBarriers,
+                          uint32_t imageMemoryBarrierCount,
+                          VkImageMemoryBarrier const* pImageMemoryBarriers) {
+  GlobalData* global_data = GetGlobalData();
+  DeviceData* device_data =
+      global_data->device_map.Get(DeviceKey(commandBuffer))->get();
+
+  // Call the original function.
+  device_data->vkCmdPipelineBarrier(
+      commandBuffer, srcStageMask, dstStageMask, dependencyFlags,
+      memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount,
+      pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
+
+  AddCommand(
+      device_data, commandBuffer,
+      std::make_unique<CmdPipelineBarrier>(
+          srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount,
+          pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers,
+          imageMemoryBarrierCount, pImageMemoryBarriers));
+}
+
 // Other intercepted vulkan functions.
+
+//
+// Our vkAllocateCommandBuffers function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(
+    VkDevice device, const VkCommandBufferAllocateInfo* pAllocateInfo,
+    VkCommandBuffer* pCommandBuffers) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  auto result = device_data->vkAllocateCommandBuffers(device, pAllocateInfo,
+                                                      pCommandBuffers);
+  if (result != VK_SUCCESS) {
+    return result;
+  }
+
+  // Track the command buffers.
+
+  absl::Span<const VkCommandBuffer> command_buffers =
+      absl::MakeConstSpan(pCommandBuffers, pAllocateInfo->commandBufferCount);
+
+  for (VkCommandBuffer command_buffer : command_buffers) {
+    device_data->command_buffers_data.Put(command_buffer,
+                                          CommandBufferData(*pAllocateInfo));
+  }
+
+  return result;
+}
+
+//
+// Our vkFreeCommandBuffers function.
+//
+void vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
+                          uint32_t commandBufferCount,
+                          const VkCommandBuffer* pCommandBuffers) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  device_data->vkFreeCommandBuffers(device, commandPool, commandBufferCount,
+                                    pCommandBuffers);
+
+  // Stop tracking the command buffers.
+  absl::Span<const VkCommandBuffer> command_buffers =
+      absl::MakeConstSpan(pCommandBuffers, commandBufferCount);
+
+  for (VkCommandBuffer command_buffer : command_buffers) {
+    device_data->command_buffers_data.Remove(command_buffer);
+  }
+}
+
+//
+// Our vkCreateBuffer function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL
+vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,
+               const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  VkBufferCreateInfo create_info = *pCreateInfo;
+  // Allow vertex/index/uniform/storage buffer to be used as transfer source
+  // buffer. Required if the buffer data needs to be copied from the buffer.
+  if ((create_info.usage &
+       (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT |
+        VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT)) != 0) {
+    create_info.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  }
+
+  // Call the original function with the modified create info.
+  VkResult result =
+      device_data->vkCreateBuffer(device, &create_info, pAllocator, pBuffer);
+
+  if (result == VK_SUCCESS) {
+    device_data->buffers.Put(*pBuffer, BufferData(create_info));
+  }
+
+  return result;
+}
+
+//
+// Our vkDestroyBuffer function.
+//
+void vkDestroyBuffer(VkDevice device, VkBuffer buffer,
+                     const VkAllocationCallbacks* pAllocator) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  device_data->vkDestroyBuffer(device, buffer, pAllocator);
+
+  device_data->buffers.Remove(buffer);
+}
 
 //
 // Our vkCreateGraphicsPipelines function.
@@ -185,9 +344,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
     VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
     const VkGraphicsPipelineCreateInfo* pCreateInfos,
     const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines) {
-  GlobalData* global_data = GetGlobalData();
-  DeviceData* device_data =
-      global_data->device_map.Get(DeviceKey(device))->get();
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
 
   // Call the original function.
   VkResult result = device_data->vkCreateGraphicsPipelines(
@@ -238,9 +395,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
     VkDevice device, VkShaderModuleCreateInfo const* pCreateInfo,
     VkAllocationCallbacks const* pAllocator, VkShaderModule* pShaderModule) {
-  GlobalData* global_data = GetGlobalData();
-  DeviceData* device_data =
-      global_data->device_map.Get(DeviceKey(device))->get();
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
 
   auto result = device_data->vkCreateShaderModule(device, pCreateInfo,
                                                   pAllocator, pShaderModule);
@@ -258,9 +413,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
 //
 void vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
                            VkAllocationCallbacks const* pAllocator) {
-  GlobalData* global_data = GetGlobalData();
-  DeviceData* device_data =
-      global_data->device_map.Get(DeviceKey(device))->get();
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
 
   // Call the original function.
   device_data->vkDestroyShaderModule(device, shaderModule, pAllocator);
@@ -294,16 +447,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
       CommandBufferData* command_buffer_data =
           device_data->command_buffers_data.Get(command_buffer);
 
-      // Ignore command buffers that are not tracked, i.e. command buffers that
-      // don't contain any interesting commands.
-      if (command_buffer_data == nullptr) {
-        continue;
-      }
-      // Mark the command buffer as submitted.
-      command_buffer_data->SetSubmitted();
+      // All of the command buffers should be tracked.
+      DEBUG_ASSERT(command_buffer_data != nullptr);
 
       // Skip all command buffers that don't contain any draw calls.
       if (!command_buffer_data->ContainsDrawCalls()) {
+        // Reset the command buffer data state because the command buffer has
+        // been submitted.
+        command_buffer_data->ResetState();
         continue;
       }
 
@@ -321,6 +472,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
            command_buffer_data->GetCommandList()) {
         cmd->ProcessSubmittedCommand(&draw_call_tracker);
       }
+
+      // Reset the command buffer data state because the command buffer has
+      // been submitted.
+      command_buffer_data->ResetState();
     }
   }
 
@@ -465,6 +620,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   }
 
   HANDLE(vkEnumerateDeviceExtensionProperties)
+  HANDLE(vkGetPhysicalDeviceMemoryProperties)
 #undef HANDLE
 
   instance_data.vkGetInstanceProcAddr = next_get_instance_proc_address;
@@ -533,6 +689,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   std::unique_ptr<DeviceData> device_data = std::make_unique<DeviceData>();
 
+  device_data->physical_device = physicalDevice;
   device_data->device = *pDevice;
   device_data->instance_data = instance_data;
 
@@ -543,14 +700,37 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     return VK_ERROR_INITIALIZATION_FAILED;            \
   }
 
+  HANDLE(vkAllocateCommandBuffers)
+  HANDLE(vkFreeCommandBuffers)
+  HANDLE(vkCreateBuffer)
+  HANDLE(vkDestroyBuffer)
   HANDLE(vkCreateGraphicsPipelines)
   HANDLE(vkCreateShaderModule)
   HANDLE(vkDestroyShaderModule)
   HANDLE(vkQueueSubmit)
   HANDLE(vkCmdBeginRenderPass)
+  HANDLE(vkCmdBindIndexBuffer)
   HANDLE(vkCmdBindPipeline)
+  HANDLE(vkCmdBindVertexBuffers)
   HANDLE(vkCmdDraw)
   HANDLE(vkCmdDrawIndexed)
+  HANDLE(vkCmdPipelineBarrier)
+
+  // Functions used by the layer but not intercepted:
+  HANDLE(vkAllocateMemory)
+  HANDLE(vkFreeMemory)
+  HANDLE(vkBeginCommandBuffer)
+  HANDLE(vkEndCommandBuffer)
+  HANDLE(vkBindBufferMemory)
+  HANDLE(vkCmdCopyBuffer)
+  HANDLE(vkCreateFence)
+  HANDLE(vkDestroyFence)
+  HANDLE(vkGetBufferMemoryRequirements)
+  HANDLE(vkInvalidateMappedMemoryRanges)
+  HANDLE(vkMapMemory)
+  HANDLE(vkQueueWaitIdle)
+  HANDLE(vkUnmapMemory)
+  HANDLE(vkWaitForFences)
 
 #undef HANDLE
 
@@ -580,14 +760,21 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   HANDLE(vkGetDeviceProcAddr)  // Self-reference.
 
   // Other device functions that this layer intercepts:
+  HANDLE(vkAllocateCommandBuffers)
+  HANDLE(vkFreeCommandBuffers)
+  HANDLE(vkCreateBuffer)
+  HANDLE(vkDestroyBuffer)
   HANDLE(vkCreateGraphicsPipelines)
   HANDLE(vkCreateShaderModule)
   HANDLE(vkDestroyShaderModule)
   HANDLE(vkQueueSubmit)
   HANDLE(vkCmdBeginRenderPass)
+  HANDLE(vkCmdBindIndexBuffer)
   HANDLE(vkCmdBindPipeline)
+  HANDLE(vkCmdBindVertexBuffers)
   HANDLE(vkCmdDraw)
   HANDLE(vkCmdDrawIndexed)
+  HANDLE(vkCmdPipelineBarrier)
 #undef HANDLE
 
   if (device == nullptr) {

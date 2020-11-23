@@ -105,7 +105,7 @@ GlobalData* GetGlobalData() { return &global_data_; }
 
 const std::array<VkLayerProperties, 1> kLayerProperties{{{
     "VkLayer_GF_frame_counter",     // layerName
-    VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion NOLINT(hicpp-signed-bitwise)
+    VK_MAKE_VERSION(1U, 1U, 130U),  // specVersion
     1,                              // implementationVersion
     "Frame counter layer.",         // description
 }}};

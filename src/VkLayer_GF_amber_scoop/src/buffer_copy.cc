@@ -91,13 +91,14 @@ BufferCopy::BufferCopy(DeviceData* device_data, const VkBuffer& buffer,
   memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
   memory_barrier.pNext = nullptr;
   memory_barrier.srcAccessMask =
-      VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+      VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+      VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_WRITE_BIT;
   memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
   device_data_->vkCmdPipelineBarrier(
       command_buffer,                      // commandBuffer
-      VK_PIPELINE_STAGE_HOST_BIT |         //
-          VK_PIPELINE_STAGE_TRANSFER_BIT,  // srcStageMask
+      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,  // srcStageMask
       VK_PIPELINE_STAGE_TRANSFER_BIT,      // dstStageMask
       0,                                   // dependencyFlags
       1U,                                  // memoryBarrierCount

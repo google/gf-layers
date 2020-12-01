@@ -14,6 +14,8 @@
 
 #include "VkLayer_GF_amber_scoop/vulkan_formats.h"
 
+// <algorithm> is used by GCC's libstdc++, but not LLVM's libc++.
+#include <algorithm>  // IWYU pragma: keep
 #include <cstdlib>
 #include <string>
 // <memory> is used by GCC's libstdc++, but not LLVM's libc++.

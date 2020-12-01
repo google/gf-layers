@@ -466,7 +466,8 @@ gf_layers_add_vulkan_layer(VkLayer_GF_frame_counter)
 ##
 gf_layers_add_vulkan_layer(VkLayer_GF_amber_scoop)
 target_link_libraries(VkLayer_GF_amber_scoop
-        PRIVATE SPIRV-Tools-opt)
+        PRIVATE SPIRV-Tools-opt
+        PRIVATE absl::strings)
 
 ##
 ## Target: VkLayer_GF_shader_fuzzer

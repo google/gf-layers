@@ -180,6 +180,20 @@ target_include_directories(
 
 
 ##
+## Target: gf_layers_opencl_headers
+##
+## Provides the OpenCL headers.
+##
+add_library(gf_layers_opencl_headers INTERFACE)
+target_include_directories(
+    gf_layers_opencl_headers
+    SYSTEM
+    INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/OpenCL-Headers)
+
+
+
+##
 ## Project: protobuf
 ##
 ## Provides targets: protobuf::protoc, protobuf::libprotobuf, and others.
@@ -378,7 +392,6 @@ if(ANDROID)
     target_link_libraries(gf_layers_layer_util PUBLIC ${GF_LAYERS_TEMP_ANDROID_LOG_LIB_PATH})
 endif()
 
-
 ##
 ## Function: gf_layers_hide_exports(target, source_dir)
 ##
@@ -408,6 +421,17 @@ function(gf_layers_hide_exports target source_dir)
     endif()
 endfunction()
 
+##
+## Target: opencl_capture (dynamic library)
+##
+##
+add_subdirectory(src/gf_layers_opencl_capture EXCLUDE_FROM_ALL)  # Provides gf_layers_opencl_capture_SOURCES.
+add_library(gf_layers_opencl_capture SHARED ${gf_layers_opencl_capture_SOURCES})
+target_include_directories(gf_layers_opencl_capture PUBLIC src/gf_layers_opencl_capture/include)
+target_link_libraries(gf_layers_opencl_capture gf_layers_opencl_headers gf_layers_layer_util)
+gf_layers_hide_exports(gf_layers_opencl_capture ${CMAKE_SOURCE_DIR}/src/gf_layers_opencl_capture)
+target_compile_features(gf_layers_opencl_capture PUBLIC cxx_std_17)
+install(TARGETS gf_layers_opencl_capture LIBRARY DESTINATION lib)
 
 ##
 ## Function: gf_layers_add_vulkan_layer(name)

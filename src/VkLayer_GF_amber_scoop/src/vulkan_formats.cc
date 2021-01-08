@@ -16,7 +16,7 @@
 
 // <cstdio> and <cstdlib> required by LOG and ASSERT macros, but IWYU doesn't
 // notice it, so we need to manually keep the includes.
-#include <cstdio>  // IWYU pragma: keep
+#include <cstdio>   // IWYU pragma: keep
 #include <cstdlib>  // IWYU pragma: keep
 
 #include "gf_layers_layer_util/logging.h"

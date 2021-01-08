@@ -14,30 +14,16 @@
 
 #include "VkLayer_GF_amber_scoop/vulkan_formats.h"
 
-// <algorithm> is used by GCC's libstdc++, but not LLVM's libc++.
-#include <algorithm>  // IWYU pragma: keep
-#include <cstdlib>
-#include <string>
-// <memory> is used by GCC's libstdc++, but not LLVM's libc++.
-#include <memory>  // IWYU pragma: keep
-
-#pragma GCC diagnostic push  // Clang, GCC.
-#pragma warning(push, 1)     // MSVC: reduces warning level to W1.
-
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma warning( \
-    disable : 4365)  // signed/unsigned mismatch in abs/strings/ascii.h
-
-#include "absl/strings/str_split.h"
-
-#pragma GCC diagnostic pop
-#pragma warning(pop)
+// <cstdio> and <cstdlib> required by LOG and ASSERT macros, but IWYU doesn't
+// notice it, so we need to manually keep the includes.
+#include <cstdio>  // IWYU pragma: keep
+#include <cstdlib>  // IWYU pragma: keep
 
 #include "gf_layers_layer_util/logging.h"
 
 namespace gf_layers::amber_scoop_layer {
 
-const char* VulkanFormat::VkFormatToAmberFormatName(VkFormat vk_format) {
+const char* VkFormatToAmberFormatName(VkFormat vk_format) {
   if (vk_format == VK_FORMAT_A1R5G5B5_UNORM_PACK16) {
     return "A1R5G5B5_UNORM_PACK16";
   }
@@ -426,162 +412,7 @@ const char* VulkanFormat::VkFormatToAmberFormatName(VkFormat vk_format) {
     return "X8_D24_UNORM_PACK32";
   }
 
-  LOG("Format not supported by amber.");
-  RUNTIME_ASSERT(false);
-}
-
-VulkanFormat::VulkanFormat(VkFormat vk_format) : vk_format_(vk_format) {
-  name_ = VkFormatToAmberFormatName(vk_format_);
-  // Parse information from the name string.
-  ParseName();
-
-  // Set total width in bytes.
-  for (ColorComponent color_component : color_components_) {
-    total_width_bits_ += color_component.width;
-  }
-}
-
-uint8_t VulkanFormat::GetPaddingBytes() const {
-  // Formats with 3 components (vec3 formats) have the same alignment as vec4
-  // formats. Packed formats don't have padding.
-  if (!IsPackedFormat() && color_components_.size() == 3) {
-    static const uint8_t BYTE_WIDTH = 8;
-    // Padding width (in bytes) is the size of one color component. All
-    // components in a vec3 format have the same width. Therefore we are using
-    // the width of the color component at position 0.
-    return static_cast<uint8_t>(color_components_.at(0).width / BYTE_WIDTH);
-  }
-  return 0;
-}
-
-void VulkanFormat::ParseName() {
-  // Split the name by '_' into chunks.
-  std::vector<std::string> chunks = absl::StrSplit(name_, '_');
-
-  // Parse chunks backwards order, because we need to know the type before
-  // parsing the component data. The type is stored in |current_type| variable.
-  ColorComponentType current_type = kSInt;
-  for (auto iterator = chunks.rbegin(); iterator != chunks.rend(); iterator++) {
-    ParseChunk(*iterator, &current_type);
-  }
-}
-
-void VulkanFormat::ParseChunk(const std::string& chunk_data,
-                              ColorComponentType* current_type) {
-  // Get "pack size" from packed formats.
-  if (chunk_data[0] == 'P') {
-    if (chunk_data == "PACK8") {
-      // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
-      pack_size_ = 8;
-    } else if (chunk_data == "PACK16") {
-      // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
-      pack_size_ = 16;
-    } else if (chunk_data == "PACK32") {
-      // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
-      pack_size_ = 32;
-    } else {
-      LOG("Unknown format.");
-      RUNTIME_ASSERT(false);
-    }
-    return;
-  }
-
-  // Handle unsigned types.
-  if (chunk_data[0] == 'U') {
-    if (chunk_data == "UINT") {
-      *current_type = kUInt;
-    } else if (chunk_data == "UNORM") {
-      *current_type = kUNorm;
-    } else if (chunk_data == "UFLOAT") {
-      *current_type = kUFloat;
-    } else if (chunk_data == "USCALED") {
-      *current_type = kUScaled;
-    } else {
-      LOG("Unknown format.");
-      RUNTIME_ASSERT(false);
-    }
-    return;
-  }
-
-  // Handle signed formats.
-  if (chunk_data[0] == 'S') {
-    if (chunk_data == "SINT") {
-      *current_type = kSInt;
-    } else if (chunk_data == "SNORM") {
-      *current_type = kSNorm;
-    } else if (chunk_data == "SSCALED") {
-      *current_type = kSScaled;
-    } else if (chunk_data == "SFLOAT") {
-      *current_type = kSFloat;
-    } else if (chunk_data == "SRGB") {
-      *current_type = kSRGB;
-    } else if (chunk_data == "S8") {
-      *current_type = kS8;
-    } else {
-      LOG("Unknown format.");
-      RUNTIME_ASSERT(false);
-    }
-    return;
-  }
-
-  // Parse the color components chunk, f.ex. "A1R5G5B5".
-  // Start from the end of the chunk string.
-  for (auto position = static_cast<int32_t>(chunk_data.size() - 1);
-       position >= 0; position--) {
-    ColorComponent color_component = {};
-    // Move the position backwards until a character is found, or the position
-    // goes negative in case of invalid string (character in position '0' should
-    // be always a valid character).
-    for (; position >= 0; position--) {
-      auto pos = static_cast<size_t>(position);
-      if (chunk_data[pos] == 'X') {
-        color_component.color_component_name = kX;
-        break;
-      }
-      if (chunk_data[pos] == 'D') {
-        color_component.color_component_name = kD;
-        break;
-      }
-      if (chunk_data[pos] == 'R') {
-        color_component.color_component_name = kR;
-        break;
-      }
-      if (chunk_data[pos] == 'G') {
-        color_component.color_component_name = kG;
-        break;
-      }
-      if (chunk_data[pos] == 'B') {
-        color_component.color_component_name = kB;
-        break;
-      }
-      if (chunk_data[pos] == 'A') {
-        color_component.color_component_name = kA;
-        break;
-      }
-    }
-    // Position should be zero or positive value. If not, the format string is
-    // invalid or not supported.
-    if (position < 0) {
-      LOG("Format not supported.");
-      RUNTIME_ASSERT(false);
-    }
-
-    // Parse the color component width. The width number starts from the next
-    // character of the current position (color component type letter).
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    const char* width_str_start = chunk_data.c_str() + position + 1;
-    const int BASE_10 = 10;
-    uint64_t width = std::strtoull(width_str_start, nullptr, BASE_10);
-
-    if (width == 0) {
-      LOG("Unable to parse color component width.");
-      RUNTIME_ASSERT(false);
-    }
-    color_component.width = static_cast<uint16_t>(width);
-    // We are parsing the widths in backwards order, so the color component
-    // needs to be insert in the beginning of the list to keep the order.
-    color_components_.insert(color_components_.begin(), color_component);
-  }
+  RUNTIME_ASSERT_MSG(false, "Format not supported by amber.");
 }
 
 }  // namespace gf_layers::amber_scoop_layer

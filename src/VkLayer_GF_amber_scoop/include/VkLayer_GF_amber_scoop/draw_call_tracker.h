@@ -87,18 +87,28 @@ class DrawCallTracker {
   // |index_count| Index count from the draw command.
   // |max_index_value| Highest index value in the index buffer. This is an
   // output value.
-  // |declaration_string_stream| String stream where the buffer
-  // declarations will be collected. |pipeline_string_stream| String stream
-  // where the pipeline definitions will be collected.
+  // |declaration_string_stream| String stream where the buffer declarations
+  // will be collected.
+  // |pipeline_string_stream| String stream  where the pipeline definitions will
+  // be collected.
   void CreateIndexBufferDeclarations(
       DeviceData* device_data, uint32_t index_count, uint32_t* max_index_value,
       std::ostringstream& declaration_string_stream,
       std::ostringstream& pipeline_string_stream) const;
 
-  bool CreateVertexBufferDeclarations(
-      DeviceData* device_data, uint32_t vertex_count, uint32_t first_instance,
-      uint32_t instance_count, uint32_t max_index_value,
-      std::ostringstream& buffer_declaration_str,
+  // Creates the part of the Amber file where the vertex buffers are declared
+  // and adds the vertex buffers to the pipeline. Copies the Vulkan buffers used
+  // as vertex buffers to a host visible memory and writes the contents to
+  // files. The whole `VkBuffer` is copied. Asserts if vertex buffer(s) can't be
+  // found, because Amber requires at least one vertex buffer.
+  // Parameters:
+  // |device_data| Pointer to device data.
+  // |declaration_string_stream| String stream where the buffer declarations
+  // will be collected.
+  // |pipeline_string_stream| String stream  where the pipeline definitions will
+  // be collected.
+  void CreateVertexBufferDeclarations(
+      DeviceData* device_data, std::ostringstream& buffer_declaration_str,
       std::ostringstream& pipeline_str);
 
   // Gets command pool used to create the current command buffer.

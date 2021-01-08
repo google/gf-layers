@@ -22,11 +22,9 @@
 #include <memory>
 #include <sstream>
 #include <string>
-#include <utility>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
 #include "VkLayer_GF_amber_scoop/buffer_copy.h"
-#include "VkLayer_GF_amber_scoop/buffer_to_file.h"
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
 #include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
@@ -105,6 +103,23 @@ std::string DisassembleShaderModule(
 
   return disassembly;
 }
+
+// Creates / opens the file |file_path| and writes the given data |data_span| to
+// it. Existing file will be overwritten. Asserts if the file can't be opened.
+void WriteDataToFile(const std::string& file_path,
+                     const absl::Span<const char>& data_span) {
+  // |file_stream| is closed automatically in it's destructor.
+  std::ofstream file_stream;
+  file_stream.open(file_path,
+                   std::ios::out | std::ios::binary | std::ios::trunc);
+  // open() doesn't throw exception so we must check that the file is open.
+  RUNTIME_ASSERT_MSG(file_stream.is_open(), "Unable to open file: %s",
+                     file_path.c_str());
+
+  file_stream.write(data_span.data(),
+                    static_cast<std::streamsize>(data_span.size()));
+  file_stream.flush();
+}
 }  // namespace
 
 void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
@@ -174,9 +189,8 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
   CreateIndexBufferDeclarations(device_data, index_count, &max_index_value,
                                 buffer_declaration_str, pipeline_str);
 
-  CreateVertexBufferDeclarations(device_data, vertex_count, first_instance,
-                                 instance_count, max_index_value,
-                                 buffer_declaration_str, pipeline_str);
+  CreateVertexBufferDeclarations(device_data, buffer_declaration_str,
+                                 pipeline_str);
 
   // Add frame buffer that can be exported to PNG.
   buffer_declaration_str << "BUFFER framebuffer FORMAT B8G8R8A8_UNORM"
@@ -296,14 +310,10 @@ void DrawCallTracker::CreateIndexBufferDeclarations(
   pipeline_string_stream << "  INDEX_DATA index_buffer" << std::endl;
 }
 
-bool DrawCallTracker::CreateVertexBufferDeclarations(
-    DeviceData* device_data, uint32_t vertex_count, uint32_t first_instance,
-    uint32_t instance_count, uint32_t max_index_value,
-    std::ostringstream& buffer_declaration_str,
+void DrawCallTracker::CreateVertexBufferDeclarations(
+    DeviceData* device_data, std::ostringstream& buffer_declaration_str,
     std::ostringstream& pipeline_str) {
   bool vertex_buffer_found = false;
-  // Map of copied |VkBuffer|s to avoid copying same buffer multiple times.
-  std::unordered_map<VkBuffer, std::unique_ptr<BufferCopy>> copied_buffers;
 
   const VkGraphicsPipelineCreateInfo& graphics_pipeline_create_info =
       device_data->graphics_pipelines.Get(draw_call_state_.graphics_pipeline)
@@ -313,10 +323,6 @@ bool DrawCallTracker::CreateVertexBufferDeclarations(
   const VkPipelineVertexInputStateCreateInfo& vertex_input_state =
       *graphics_pipeline_create_info.pVertexInputState;
 
-  // Create a list of pipeline barriers that should be used to synchronize
-  // the access to index buffer.
-  std::vector<const CmdPipelineBarrier*> pipeline_barriers;
-
   // Make span for attribute and binding descriptions for safer access.
   absl::Span<const VkVertexInputAttributeDescription> attribute_descriptions =
       absl::MakeConstSpan<>(vertex_input_state.pVertexAttributeDescriptions,
@@ -324,6 +330,11 @@ bool DrawCallTracker::CreateVertexBufferDeclarations(
   absl::Span<const VkVertexInputBindingDescription> binding_descriptions =
       absl::MakeConstSpan<>(vertex_input_state.pVertexBindingDescriptions,
                             vertex_input_state.vertexBindingDescriptionCount);
+
+  // Keep list of copied and saved buffers to avoid copying same buffer multiple
+  // times. Key is the Vulkan buffer handle and value a file name where the
+  // buffer data has been saved.
+  std::unordered_map<VkBuffer, std::string> copied_buffers;
 
   // Go through all attribute descriptions to get the pipeline's vertex buffer
   // bindings. First copy the whole |VkBuffer| into a host visible memory.
@@ -339,12 +350,11 @@ bool DrawCallTracker::CreateVertexBufferDeclarations(
         });
 
     // Verify that a binding description exists.
-    if (binding_description == nullptr) {
-      LOG("Unable to find |VkVertexInputBindingDescription| for binding [%i] "
-          "in |VkVertexInputAttributeDescription| at location [%i]",
-          attribute_description.binding, attribute_description.location);
-      RUNTIME_ASSERT(false);
-    }
+    RUNTIME_ASSERT_MSG(
+        binding_description != binding_descriptions.end(),
+        "Unable to find |VkVertexInputBindingDescription| for binding [%i] "
+        "in |VkVertexInputAttributeDescription| at location [%i]",
+        attribute_description.binding, attribute_description.location);
 
     // Get Vulkan handle and create info for the buffer.
     const VertexBufferBinding& vertex_buffer =
@@ -356,83 +366,73 @@ bool DrawCallTracker::CreateVertexBufferDeclarations(
     DEBUG_ASSERT(
         (buffer_create_info.usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) != 0);
 
+    const auto buffer_order = static_cast<uint32_t>(copied_buffers.size());
+    std::string buffer_name = "vert_";
+    buffer_name.append(std::to_string(buffer_order));
+    std::string buffer_file_name;
+
     // Check if the buffer has been copied already, i.e. it is stored in the
-    // |copied_buffers| map.
-    if (copied_buffers[vertex_buffer.buffer].get() == nullptr) {
+    // |copied_buffers| map. If not, copy the buffer and store its contents to a
+    // file.
+    if (copied_buffers.count(vertex_buffer.buffer) == 0) {
+      // Generate the file name.
+      buffer_file_name = global_data_->settings.output_file_prefix;
+      buffer_file_name.append("_").append(buffer_name).append(".bin");
+
+      // Copy the buffer to a host visible memory.
       std::unique_ptr<BufferCopy> vertex_buffer_copy =
           std::make_unique<BufferCopy>(
               device_data, vertex_buffer.buffer, buffer_create_info.size,
               draw_call_state_.queue, GetCommandPool(device_data));
 
-      copied_buffers[vertex_buffer.buffer] = std::move(vertex_buffer_copy);
+      // Write the buffer contents to a file.
+      WriteDataToFile(buffer_file_name, vertex_buffer_copy->GetCopiedData());
+
+      // Store the buffer file name to the |copied_buffers| map.
+      copied_buffers.emplace(vertex_buffer.buffer, buffer_file_name);
+    } else {
+      // Buffer is already copied. Use the stored file name.
+      buffer_file_name = copied_buffers.at(vertex_buffer.buffer);
     }
-    const BufferCopy* vertex_buffer_copy =
-        copied_buffers[vertex_buffer.buffer].get();
 
-    std::string buffer_name = "vert_";
-    buffer_name.append(std::to_string(attribute_description.location));
-
-    VulkanFormat format = VulkanFormat(attribute_description.format);
+    // Create buffer declaration for each vertex buffer even if the vertex
+    // buffers share the same Vulkan buffer, because Amber doesn't support
+    // binding same vertex buffer to more than one location.
+    buffer_declaration_str << "BUFFER " << buffer_name
+                           << " DATA_TYPE R8_UINT SIZE "
+                           << buffer_create_info.size << " FILE BINARY "
+                           << buffer_file_name << std::endl;
 
     std::string input_rate_str;
-    const VertexBufferBinding& vertex_buffer_binding =
-        draw_call_state_.bound_vertex_buffers.at(attribute_description.binding);
-
-    // |element_count| is number of elements of type
-    // |VkVertexInputAttributeDescription.format| to be read from the buffer.
-    // The element count depends on the binding's |inputRate| and if this is an
-    // instanced draw.
-    uint32_t element_count = 0;
     if (binding_description->inputRate == VK_VERTEX_INPUT_RATE_VERTEX) {
-      // If indices are used, we need to copy all the values up to the greatest
-      // value of the indices (so the |element_count| is the greatest index
-      // value +1). Otherwise we can use the number of vertices passed from the
-      // draw command.
-      element_count = vertex_count == 0 ? max_index_value + 1 : vertex_count;
       input_rate_str = "vertex";
     } else if (binding_description->inputRate ==
                VK_VERTEX_INPUT_RATE_INSTANCE) {
-      // Copy all values starting from instance 0 even if the first instance is
-      // greater than 0. This makes the draw call more similar to the original
-      // draw call.
-      element_count = first_instance + instance_count;
       input_rate_str = "instance";
     } else {
-      LOG("Invalid vertex input rate.");
-      RUNTIME_ASSERT(false);
+      RUNTIME_ASSERT_MSG(false, "Invalid vertex input rate: %i",
+                         binding_description->inputRate);
     }
 
-    std::string buffer_file_name = global_data_->settings.output_file_prefix;
-    buffer_file_name.append("_").append(buffer_name).append(".bin");
-    BufferToFile buffer_to_file(buffer_file_name);
+    const VertexBufferBinding& vertex_buffer_binding =
+        draw_call_state_.bound_vertex_buffers.at(attribute_description.binding);
 
-    // Init the byte offset |offset| with sum of offsets defined in
-    // |VkVertexInputAttributeDescription.offset| and
-    // |vkCmdBindVertexBuffers.pOffsets|.
-    VkDeviceSize offset =
-        attribute_description.offset + vertex_buffer_binding.offset;
-
-    const absl::Span<const char> copied_data =
-        vertex_buffer_copy->GetCopiedData();
-
-    // Write data elements to the file.
-    for (uint32_t i = 0; i < element_count; i++) {
-      buffer_to_file.WriteComponents(copied_data, offset, format);
-      // Increase the offset by the value of stride.
-      offset += binding_description->stride;
-    }
-
-    buffer_declaration_str << "BUFFER " << buffer_name << " DATA_TYPE "
-                           << format.GetName() << " SIZE " << element_count
-                           << " FILE BINARY " << buffer_file_name << std::endl;
+    const char* format_name =
+        VkFormatToAmberFormatName(attribute_description.format);
 
     pipeline_str << "  VERTEX_DATA " << buffer_name << " LOCATION "
                  << attribute_description.location << " RATE " << input_rate_str
+                 << " FORMAT " << format_name << " OFFSET "
+                 << (attribute_description.offset +
+                     vertex_buffer_binding.offset)
+                 << " STRIDE " << std::to_string(binding_description->stride)
                  << std::endl;
 
     vertex_buffer_found = true;
   }
-  return vertex_buffer_found;
+  RUNTIME_ASSERT_MSG(vertex_buffer_found,
+                     "Vertex buffer not found. Unable to create an Amber file, "
+                     "because Amber requires at least one vertex buffer.");
 }
 
 VkCommandPool DrawCallTracker::GetCommandPool(DeviceData* device_data) const {

@@ -52,6 +52,15 @@ void Log(const char* format_string, ...);
     }                               \
   } while (false)
 
+#define RUNTIME_ASSERT_MSG(x, ...)  \
+  do {                              \
+    if (!(x)) {                     \
+      LOG("Assertion failed: " #x); \
+      LOG("Message: " __VA_ARGS__); \
+      abort();                      \
+    }                               \
+  } while (false)
+
 #define DEBUG_LOG(...)     \
   do {                     \
     if (GF_LAYERS_DEBUG) { \
@@ -64,6 +73,13 @@ void Log(const char* format_string, ...);
     if (GF_LAYERS_DEBUG) { \
       RUNTIME_ASSERT(x);   \
     }                      \
+  } while (false)
+
+#define DEBUG_ASSERT_MSG(x, ...)          \
+  do {                                    \
+    if (GF_LAYERS_DEBUG) {                \
+      RUNTIME_ASSERT_MSG(x, __VA_ARGS__); \
+    }                                     \
   } while (false)
 
 #endif  // GF_LAYERS_LAYER_UTIL_LOGGING_H

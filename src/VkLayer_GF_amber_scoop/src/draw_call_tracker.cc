@@ -332,8 +332,7 @@ void DrawCallTracker::CreateVertexBufferDeclarations(
                             vertex_input_state.vertexBindingDescriptionCount);
 
   // Keep list of copied and saved buffers to avoid copying same buffer multiple
-  // times. Key is the Vulkan buffer handle and value a file name where the
-  // buffer data has been saved.
+  // times. Key is the Vulkan buffer handle and value is the name of the buffer.
   std::unordered_map<VkBuffer, std::string> copied_buffers;
 
   // Go through all attribute descriptions to get the pipeline's vertex buffer
@@ -366,17 +365,18 @@ void DrawCallTracker::CreateVertexBufferDeclarations(
     DEBUG_ASSERT(
         (buffer_create_info.usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) != 0);
 
-    const auto buffer_order = static_cast<uint32_t>(copied_buffers.size());
-    std::string buffer_name = "vert_";
-    buffer_name.append(std::to_string(buffer_order));
-    std::string buffer_file_name;
-
     // Check if the buffer has been copied already, i.e. it is stored in the
     // |copied_buffers| map. If not, copy the buffer and store its contents to a
     // file.
+    std::string buffer_name;
     if (copied_buffers.count(vertex_buffer.buffer) == 0) {
+      // Generate unique name for the buffer.
+      const auto buffer_order = static_cast<uint32_t>(copied_buffers.size());
+      buffer_name = "vert_";
+      buffer_name.append(std::to_string(buffer_order));
+
       // Generate the file name.
-      buffer_file_name = global_data_->settings.output_file_prefix;
+      std::string buffer_file_name = global_data_->settings.output_file_prefix;
       buffer_file_name.append("_").append(buffer_name).append(".bin");
 
       // Copy the buffer to a host visible memory.
@@ -388,20 +388,18 @@ void DrawCallTracker::CreateVertexBufferDeclarations(
       // Write the buffer contents to a file.
       WriteDataToFile(buffer_file_name, vertex_buffer_copy->GetCopiedData());
 
-      // Store the buffer file name to the |copied_buffers| map.
-      copied_buffers.emplace(vertex_buffer.buffer, buffer_file_name);
-    } else {
-      // Buffer is already copied. Use the stored file name.
-      buffer_file_name = copied_buffers.at(vertex_buffer.buffer);
-    }
+      // Store the buffer name to the |copied_buffers| map.
+      copied_buffers.emplace(vertex_buffer.buffer, buffer_name);
 
-    // Create buffer declaration for each vertex buffer even if the vertex
-    // buffers share the same Vulkan buffer, because Amber doesn't support
-    // binding same vertex buffer to more than one location.
-    buffer_declaration_str << "BUFFER " << buffer_name
-                           << " DATA_TYPE R8_UINT SIZE "
-                           << buffer_create_info.size << " FILE BINARY "
-                           << buffer_file_name << std::endl;
+      // Create buffer declaration.
+      buffer_declaration_str
+          << "BUFFER " << buffer_name << " DATA_TYPE R8_UINT SIZE "
+          << buffer_create_info.size << " FILE BINARY " << buffer_file_name
+          << std::endl;
+    } else {
+      // Buffer is already copied. Get the buffer name from the map.
+      buffer_name = copied_buffers.at(vertex_buffer.buffer);
+    }
 
     std::string input_rate_str;
     if (binding_description->inputRate == VK_VERTEX_INPUT_RATE_VERTEX) {

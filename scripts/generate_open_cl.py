@@ -77,10 +77,12 @@ def main(args) -> None:
 
     assert commands
 
-    typedef_lines: List[str] = list()
-    struct_lines: List[str] = list()
-    load_function_lines: List[str] = list()
-    prototype_lines: List[str] = list()
+    typedef_lines: List[str] = []
+    struct_lines: List[str] = []
+    load_function_lines: List[str] = []
+    prototype_lines: List[str] = []
+
+    function_names: List[str] = []
 
     for command in commands:  # type: ET.Element
         assert command.tag == "command"
@@ -105,6 +107,7 @@ def main(args) -> None:
 
         struct_lines.append(f"  PFN_{name.text} {name.text} = nullptr;")
         load_function_lines.append(f"LoadFunction({name.text});")
+        function_names.append(name.text)
 
     for command in commands:  # type: ET.Element
         assert command.tag == "command"
@@ -130,17 +133,24 @@ def main(args) -> None:
 
         typedef_parts: List[str] = list()
 
-        # E.g. typedef void*(CL_API_CALL* PFN_clHostMemAllocINTEL)(
-        append_space(typedef_parts, "typedef")
-        append_space(typedef_parts, proto.text)
+        append_space(typedef_parts, "using")
+
         assert len(proto) == 2
         return_type = proto[0]
         assert return_type.tag == "type"
-        append(typedef_parts, return_type.text)
-        append(typedef_parts, return_type.tail)
         name = proto[1]
         assert name.tag == "name" and not name.tail
-        append(typedef_parts, f"(CL_API_CALL* PFN_{name.text})(")
+
+        append_space(typedef_parts, f"PFN_{name.text}")
+        append_space(typedef_parts, "=")
+        append_space(typedef_parts, "std::add_pointer<CL_API_ENTRY")
+
+        append_space(typedef_parts, proto.text)
+        append(typedef_parts, return_type.text)
+        append(typedef_parts, return_type.tail)
+        typedef_parts.append(" ")
+
+        append_space(typedef_parts, "CL_API_CALL(")
 
         first = True
 
@@ -200,10 +210,7 @@ def main(args) -> None:
             append(typedef_parts, name.tail)
             append(typedef_parts, "*/")
 
-        if command.get('suffix'):
-            append(typedef_parts, f") {command.get('suffix')};")
-        else:
-            append(typedef_parts, ");")
+        append(typedef_parts, ")>::type;")
 
         typedef_lines.append("".join(typedef_parts))
 
@@ -228,7 +235,7 @@ def main(args) -> None:
         #     cl_event* event) CL_API_SUFFIX__VERSION_1_0 {
         #
         #   LOG("clEnqueueReadBuffer");
-        #   gf_layers::opencl_capture::GetGlobalData()
+        #   return? gf_layers::opencl_capture::GetGlobalData()
         #       ->opencl_pointers.clEnqueueReleaseGLObjects();
         # }
 
@@ -303,14 +310,17 @@ def main(args) -> None:
             # E.g. []
             append(prototype_parts, name.tail)
 
-        if command.get('suffix'):
-            append(prototype_parts, f") {command.get('suffix')} {{")
-        else:
-            append(prototype_parts, ") {")
+        append(prototype_parts, ") {")
 
-        prototype_parts.append(f"""
-  LOG("{function_name.text}");
-  gf_layers::opencl_capture::GetGlobalData()->opencl_pointers.{function_name.text}(""")
+        prototype_parts.append(f"""\n  LOG("{function_name.text}");""")
+        prototype_parts.append(f"\n  ")
+
+        if return_type.text != "void" or return_type.tail.strip():
+            # Return type is NOT "void" or it is void but there is something else after void (i.e. void*).
+            # Thus, we need a return statement.
+            prototype_parts.append("return ")
+
+        prototype_parts.append(f"gf_layers::opencl_capture::GetGlobalData()->opencl_pointers.{function_name.text}(")
 
         # Function call parameters.
 
@@ -350,6 +360,23 @@ def main(args) -> None:
     struct_out_path.write_text("\n".join(struct_lines), encoding="utf-8", errors="ignore")
     load_function_out_path.write_text("\n".join(load_function_lines), encoding="utf-8", errors="ignore")
     prototypes_out_path.write_text("\n".join(prototype_lines), encoding="utf-8", errors="ignore")
+
+    linker_script_linux_path = Path() / "src" / "gf_layers_opencl_capture" / "gf_layers_opencl_capture.lds"
+
+    # noinspection PyListCreation
+    linker_script_linux = []
+
+    linker_script_linux.append("# Linker script for Linux.")
+    linker_script_linux.append("# Generated file; do not edit.")
+    linker_script_linux.append("{")
+    linker_script_linux.append("global:")
+    for name in function_names:
+        linker_script_linux.append(f"    {name};")
+    linker_script_linux.append("local:")
+    linker_script_linux.append("    *;")
+    linker_script_linux.append("};")
+
+    linker_script_linux_path.write_text("\n".join(linker_script_linux), encoding="utf-8", errors="ignore")
 
 
 if __name__ == "__main__":

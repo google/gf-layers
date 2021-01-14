@@ -428,7 +428,7 @@ endfunction()
 add_subdirectory(src/gf_layers_opencl_capture EXCLUDE_FROM_ALL)  # Provides gf_layers_opencl_capture_SOURCES.
 add_library(gf_layers_opencl_capture SHARED ${gf_layers_opencl_capture_SOURCES})
 target_include_directories(gf_layers_opencl_capture PUBLIC src/gf_layers_opencl_capture/include)
-target_link_libraries(gf_layers_opencl_capture gf_layers_opencl_headers gf_layers_layer_util)
+target_link_libraries(gf_layers_opencl_capture gf_layers_opencl_headers gf_layers_layer_util ${CMAKE_DL_LIBS})
 gf_layers_hide_exports(gf_layers_opencl_capture ${CMAKE_SOURCE_DIR}/src/gf_layers_opencl_capture)
 target_compile_features(gf_layers_opencl_capture PUBLIC cxx_std_17)
 install(TARGETS gf_layers_opencl_capture LIBRARY DESTINATION lib)

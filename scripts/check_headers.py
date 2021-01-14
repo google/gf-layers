@@ -94,7 +94,7 @@ def exclude_filename(f: str):
 
 def go():
     fail = False
-    copyright_pattern = re.compile(r"Copyright 20(18|19|20) The gf-layers Project Authors")
+    copyright_pattern = re.compile(r"Copyright 20(18|19|20|21) The gf-layers Project Authors")
     generated_pattern = re.compile(r"[gG]enerated")
 
     for (dirpath, dirnames, filenames) in os.walk(os.curdir):

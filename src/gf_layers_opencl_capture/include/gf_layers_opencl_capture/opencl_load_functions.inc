@@ -1,23 +1,17 @@
-LoadFunction(clGetDeviceIDsFromD3D10KHR);
-LoadFunction(clCreateFromD3D10BufferKHR);
-LoadFunction(clCreateFromD3D10Texture2DKHR);
-LoadFunction(clCreateFromD3D10Texture3DKHR);
-LoadFunction(clEnqueueAcquireD3D10ObjectsKHR);
-LoadFunction(clEnqueueReleaseD3D10ObjectsKHR);
-LoadFunction(clGetDeviceIDsFromD3D11KHR);
-LoadFunction(clCreateFromD3D11BufferKHR);
-LoadFunction(clCreateFromD3D11Texture2DKHR);
-LoadFunction(clCreateFromD3D11Texture3DKHR);
-LoadFunction(clEnqueueAcquireD3D11ObjectsKHR);
-LoadFunction(clEnqueueReleaseD3D11ObjectsKHR);
-LoadFunction(clGetDeviceIDsFromDX9MediaAdapterKHR);
-LoadFunction(clCreateFromDX9MediaSurfaceKHR);
-LoadFunction(clEnqueueAcquireDX9MediaSurfacesKHR);
-LoadFunction(clEnqueueReleaseDX9MediaSurfacesKHR);
-LoadFunction(clGetDeviceIDsFromDX9INTEL);
-LoadFunction(clCreateFromDX9MediaSurfaceINTEL);
-LoadFunction(clEnqueueAcquireDX9ObjectsINTEL);
-LoadFunction(clEnqueueReleaseDX9ObjectsINTEL);
+// Copyright 2021 The gf-layers Project Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 LoadFunction(clCreateEventFromEGLSyncKHR);
 LoadFunction(clCreateFromEGLImageKHR);
 LoadFunction(clEnqueueAcquireEGLObjectsKHR);
@@ -63,10 +57,6 @@ LoadFunction(clEnqueueAcquireGLObjects);
 LoadFunction(clEnqueueReleaseGLObjects);
 LoadFunction(clCreateFromGLTexture2D);
 LoadFunction(clCreateFromGLTexture3D);
-LoadFunction(clGetDeviceIDsFromVA_APIMediaAdapterINTEL);
-LoadFunction(clCreateFromVA_APIMediaSurfaceINTEL);
-LoadFunction(clEnqueueAcquireVA_APIMediaSurfacesINTEL);
-LoadFunction(clEnqueueReleaseVA_APIMediaSurfacesINTEL);
 LoadFunction(clHostMemAllocINTEL);
 LoadFunction(clDeviceMemAllocINTEL);
 LoadFunction(clSharedMemAllocINTEL);

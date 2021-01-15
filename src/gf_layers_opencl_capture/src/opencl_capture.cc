@@ -38,6 +38,10 @@ GlobalData* GetGlobalData() { return &global_data_; }
 }  // namespace
 
 GlobalData::GlobalData() {
+#if defined(__ANDROID__)
+
+  // This only works for Pixel!
+
   void* opencl_pixel = dlopen("libOpenCL-pixel.so", RTLD_NOW | RTLD_LOCAL);
   RUNTIME_ASSERT(opencl_pixel);
   using PFN_enable_opencl = std::add_pointer<void()>::type;
@@ -58,6 +62,23 @@ GlobalData::GlobalData() {
 #include "gf_layers_opencl_capture/opencl_load_functions.inc"
 
 #undef LoadFunction
+
+#else  // defined(__ANDROID__)
+
+  // Desktop Linux (and maybe Mac).
+
+  void* opencl = dlopen("libOpenCL.so", RTLD_NOW | RTLD_LOCAL);
+  RUNTIME_ASSERT(opencl);
+
+#define LoadFunction(function) \
+  opencl_pointers.function =   \
+      reinterpret_cast<PFN_##function>(dlsym(opencl, #function))
+
+#include "gf_layers_opencl_capture/opencl_load_functions.inc"
+
+#undef LoadFunction
+
+#endif  // else defined(__ANDROID__)
 }
 
 }  // namespace gf_layers::opencl_capture

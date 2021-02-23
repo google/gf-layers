@@ -24,10 +24,14 @@
 namespace gf_layers::amber_scoop_layer {
 
 const char* VkFormatToAmberFormatName(VkFormat vk_format) {
+#pragma GCC diagnostic push  // GCC, clang: disable "-Wswitch-enum" warning.
+#pragma GCC diagnostic ignored "-Wswitch-enum"
+
   // Disable warning: "enumerator 'identifier' in switch of enum 'enumeration'
   // is not explicitly handled by a case label".
-#pragma warhing(push)
+#pragma warning(push)
 #pragma warning(disable : 4061)
+
   switch (vk_format) {
     case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
       return "A1R5G5B5_UNORM_PACK16";
@@ -291,6 +295,7 @@ const char* VkFormatToAmberFormatName(VkFormat vk_format) {
       RUNTIME_ASSERT_MSG(false, "Format not supported by amber.");
   }
 #pragma warning(pop)
+#pragma GCC diagnostic pop
 }
 
 }  // namespace gf_layers::amber_scoop_layer

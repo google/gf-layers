@@ -43,7 +43,7 @@ DescriptorSetData::FlattenedDescriptorType GetFlattenedDescriptorType(
     }
     case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
     case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {
-      // If descriptorType is any of above types, each element of
+      // If descriptorType is any of the types above, each element of
       // pTexelBufferView must be either a valid VkBufferView handle (or
       // VK_NULL_HANDLE if the nullDescriptor feature is enabled).
       return DescriptorSetData::TEXEL_BUFFER;

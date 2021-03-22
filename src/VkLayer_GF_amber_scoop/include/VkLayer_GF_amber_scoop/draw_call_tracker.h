@@ -18,12 +18,16 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <memory>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
+#include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
+#include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
 #include "VkLayer_GF_amber_scoop/vulkan_commands.h"
+#include "gf_layers_layer_util/util.h"
 
 namespace gf_layers::amber_scoop_layer {
 
@@ -33,6 +37,20 @@ namespace gf_layers::amber_scoop_layer {
 // responsible for generating the Amber files. See HandleDrawCall function.
 class DrawCallTracker {
  public:
+  // Type aliases used to clarify the maps' key and value types.
+  using DescriptorSetNumber = uint32_t;
+  using BindingNumber = uint32_t;
+  using DynamicOffset = uint32_t;
+
+  struct DescriptorSetWrapper {
+    VkDescriptorSet descriptor_set = {};
+    // Dynamic offsets used in this descriptor set. Key is the binding number of
+    // the descriptor(s) and value is a list of dynamic offset(s) for the
+    // binding.
+    std::unordered_map<BindingNumber, std::vector<BindingNumber>>
+        dynamic_offsets;
+  };
+
   // Struct used to store index buffer binding information from
   // |vkCmdBindIndexBuffer| command.
   struct IndexBufferBinding {
@@ -52,10 +70,15 @@ class DrawCallTracker {
   struct DrawCallState {
     VkCommandBuffer command_buffer;
     VkQueue queue;
+    IndexBufferBinding bound_index_buffer;
     VkRenderPassBeginInfo* current_render_pass;
     uint32_t current_subpass;
+    // Bound graphics pipeline;
     VkPipeline graphics_pipeline;
-    IndexBufferBinding bound_index_buffer;
+    // Graphics pipeline's layout data.
+    const PipelineLayoutData* graphics_pipeline_layout_data;
+    std::unordered_map<DescriptorSetNumber, DescriptorSetWrapper>
+        graphics_pipeline_descriptor_sets;
     std::vector<uint8_t> push_constant_data;
     // Map of vertex buffer bindings and offsets. Key is the binding number and
     // value is a struct of buffer handle and offset.
@@ -66,11 +89,50 @@ class DrawCallTracker {
     std::vector<const CmdPipelineBarrier*> pipeline_barriers;
   };
 
-  explicit DrawCallTracker(GlobalData* global_data)
-      : global_data_(global_data) {}
+  // |global_data| Global data.
+  // |command_buffer| Command buffer related to this draw call tracker.
+  // |queue| Queue where the commands will be submitted.
+  DrawCallTracker(GlobalData* global_data, VkCommandBuffer command_buffer,
+                  VkQueue queue)
+      : global_data_(global_data) {
+    draw_call_state_.command_buffer = command_buffer;
+    draw_call_state_.queue = queue;
+  }
 
   // Gets a pointer to the editable draw call state struct.
   DrawCallState* GetDrawCallState() { return &draw_call_state_; }
+
+  // Returns pointer to the device data of the device.
+  DeviceData* GetDeviceData() {
+    return global_data_->device_map
+        .Get(DeviceKey(draw_call_state_.command_buffer))
+        ->get();
+  }
+
+  // Binds the given graphics pipeline and performs pipeline layout
+  // compatibility check (not implemented yet).
+  void BindGraphicsPipeline(VkPipeline graphics_pipeline) {
+    draw_call_state_.graphics_pipeline = graphics_pipeline;
+    GraphicsPipelineData* pipeline_data =
+        GetDeviceData()->graphics_pipelines.Get(graphics_pipeline)->get();
+    draw_call_state_.graphics_pipeline_layout_data =
+        GetDeviceData()->pipeline_layouts.Get(
+            pipeline_data->GetCreateInfo().layout);
+  }
+
+  // Stores the given descriptor set binding. Also stores the dynamic offsets.
+  // |set_number| Descriptor set number.
+  // |descriptor_set| Vulkan handle to the descriptor set.
+  // |dynamic_offsets| Vector of dynamic offsets. This vector contains all of
+  // the dynamic offsets from the vkCmdBindDescriptorSets command. Therefore it
+  // may contain offsets related to other descriptor sets.
+  // |dynamic_offset_idx| Index used to read proper content's from the
+  // dynamic offsets vector. The index is increased by one in this function when
+  // a value is read from the vector.
+  void BindGraphicsDescriptorSet(uint32_t set_number,
+                                 VkDescriptorSet descriptor_set,
+                                 const std::vector<uint32_t>& dynamic_offsets,
+                                 uint32_t* dynamic_offset_idx);
 
   // Handles all of the draw calls. An Amber file will be generated
   // from the draw call if the draw call is set to be captured via settings.
@@ -79,6 +141,16 @@ class DrawCallTracker {
                       uint32_t first_instance, uint32_t instance_count);
 
  private:
+  // Creates the part of the Amber file where the descriptor sets and
+  // descriptors are declared.
+  // |device_data| Pointer to device data.
+  // |buffer_declaration_str| String stream where the descriptor set definitions
+  // will be collected.
+  // |pipeline_str| String stream where the bind commands will be collected.
+  void CreateDescriptorSetDeclarations(
+      DeviceData* device_data, std::ostringstream& buffer_declaration_str,
+      std::ostringstream& pipeline_str);
+
   // Creates the part of the Amber file where the index buffers are declared.
   // Copies |index_count| amount of indices from the index buffer (starting from
   // the offset defined in the index buffer binding).
@@ -115,7 +187,8 @@ class DrawCallTracker {
   VkCommandPool GetCommandPool(DeviceData* device_data) const;
 
   DrawCallState draw_call_state_ = {};
-  // Pointer to the global data. Used in HandleDrawCall function.
+  // Pointer to the global data. Used in HandleDrawCall function and may be
+  // accessed via |GetDeviceData| function.
   GlobalData* global_data_;
 };
 

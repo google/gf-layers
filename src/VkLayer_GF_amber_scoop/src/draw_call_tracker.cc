@@ -22,11 +22,13 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include "VkLayer_GF_amber_scoop/amber_scoop_layer.h"
 #include "VkLayer_GF_amber_scoop/buffer_copy.h"
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
+#include "VkLayer_GF_amber_scoop/descriptor_set_data.h"
 #include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
 #include "VkLayer_GF_amber_scoop/vulkan_formats.h"
 #include "absl/types/span.h"
@@ -120,7 +122,93 @@ void WriteDataToFile(const std::string& file_path,
                     static_cast<std::streamsize>(data_span.size()));
   file_stream.flush();
 }
+
+// Returns a buffer/image type name used in Amber's BIND BUFFER/SAMPLER
+// command.
+const char* GetDescriptorTypeName(VkDescriptorType descriptor_type) {
+#pragma GCC diagnostic push  // GCC, clang: disable "-Wswitch-enum" warning.
+#pragma GCC diagnostic ignored "-Wswitch-enum"
+  // Disable warning: "enumerator 'identifier' in switch of enum 'enumeration'
+  // is not explicitly handled by a case label".
+#pragma warning(push)
+#pragma warning(disable : 4061)
+  switch (descriptor_type) {
+    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+      return "combined_image_sampler";
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+      return "sampled_image";
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+      return "storage";
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+      return "storage_dynamic";
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+      return "storage_image";
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+      return "storage_texel_buffer";
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+      return "uniform";
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+      return "uniform_dynamic";
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+      return "uniform_texel_buffer";
+    default:
+      RUNTIME_ASSERT_MSG(false, "Unimplemented descriptor type: %i",
+                         descriptor_type);
+  }
+#pragma warning(pop)
+#pragma GCC diagnostic pop
+}
 }  // namespace
+
+void DrawCallTracker::BindGraphicsDescriptorSet(
+    uint32_t set_number, VkDescriptorSet descriptor_set,
+    const std::vector<uint32_t>& dynamic_offsets,
+    uint32_t* dynamic_offset_idx) {
+  // Initialize the descriptor set state with an empty map of bindings.
+  draw_call_state_.graphics_pipeline_descriptor_sets[set_number] = {};
+  DescriptorSetWrapper& descriptor_set_binding =
+      draw_call_state_.graphics_pipeline_descriptor_sets[set_number];
+  descriptor_set_binding.descriptor_set = descriptor_set;
+  descriptor_set_binding.dynamic_offsets = {};
+
+  const DescriptorSetData* descriptor_set_data =
+      GetDeviceData()->descriptor_sets.Get(descriptor_set);
+  const VkDescriptorSetLayoutCreateInfo& layout_create_info =
+      descriptor_set_data->GetDescriptorSetLayoutData()->GetCreateInfo();
+
+  // Loop through all bindings in the descriptor set data to check if there's
+  // any UNIFORM_BUFFER_DYNAMIC or STORAGE_BUFFER_DYNAMIC descriptors in the
+  // set and store the dynamic offsets for them.
+  //
+  // From the Vulkan spec:
+  // If any of the sets being bound include dynamic uniform or storage
+  // buffers, then pDynamicOffsets includes one element for each array element
+  // in each dynamic descriptor type binding in each set. Values are taken
+  // from pDynamicOffsets in an order such that all entries for set N come
+  // before set N+1; within a set, entries are ordered by the binding numbers
+  // in the descriptor set layouts; and within a binding array, elements are
+  // in order. dynamicOffsetCount must equal the total number of dynamic
+  // descriptors in the sets being bound.
+  for (const std::pair<const BindingNumber,
+                       std::vector<VkDescriptorBufferInfo>>& binding :
+       *descriptor_set_data->GetDescriptorBufferBindings()) {
+    uint32_t binding_number = binding.first;
+    const VkDescriptorSetLayoutBinding& layout_binding =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        layout_create_info.pBindings[binding_number];
+    if (layout_binding.descriptorType ==
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+        layout_binding.descriptorType ==
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+      for (uint32_t array_element = 0;
+           array_element < layout_binding.descriptorCount; array_element++) {
+        descriptor_set_binding.dynamic_offsets[binding_number].push_back(
+            dynamic_offsets[*dynamic_offset_idx]);
+        (*dynamic_offset_idx)++;
+      }
+    }
+  }
+}
 
 void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
                                      uint32_t first_vertex,
@@ -186,11 +274,16 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
   // |CreateIndexBufferDeclarations| function.
   uint32_t max_index_value = 0;
 
-  CreateIndexBufferDeclarations(device_data, index_count, &max_index_value,
-                                buffer_declaration_str, pipeline_str);
+  if (index_count > 0) {
+    CreateIndexBufferDeclarations(device_data, index_count, &max_index_value,
+                                  buffer_declaration_str, pipeline_str);
+  }
 
   CreateVertexBufferDeclarations(device_data, buffer_declaration_str,
                                  pipeline_str);
+
+  CreateDescriptorSetDeclarations(device_data, buffer_declaration_str,
+                                  pipeline_str);
 
   // Add frame buffer that can be exported to PNG.
   buffer_declaration_str << "BUFFER framebuffer FORMAT B8G8R8A8_UNORM"
@@ -248,6 +341,145 @@ void DrawCallTracker::HandleDrawCall(uint32_t first_index, uint32_t index_count,
   amber_file << std::endl;
 
   amber_file.close();
+}
+
+void DrawCallTracker::CreateDescriptorSetDeclarations(
+    DeviceData* device_data, std::ostringstream& buffer_declaration_str,
+    std::ostringstream& pipeline_str) {
+  // Keep list of copied and saved buffers to avoid copying same buffer multiple
+  // times. Key is the Vulkan buffer handle and value is the name of the buffer.
+  std::unordered_map<VkBuffer, std::string> copied_buffers;
+
+  // Loop through all descriptor set bindings. Create buffer declarations for
+  // all descriptors and store the data to binary files.
+  for (const std::pair<const DescriptorSetNumber, DescriptorSetWrapper>&
+           descriptor_set_binding :
+       draw_call_state_.graphics_pipeline_descriptor_sets) {
+    // Use some variables to get easier access to the resources and to clarify
+    // the names.
+    const uint32_t descriptor_set_number = descriptor_set_binding.first;
+    DescriptorSetData* descriptor_set_data = device_data->descriptor_sets.Get(
+        descriptor_set_binding.second.descriptor_set);
+
+    // Loop through all uniform / storage buffer descriptors within the set.
+    // Copy the buffers used by the descriptors and store the contents to files.
+    for (const std::pair<const DescriptorSetData::BindingNumber,
+                         std::vector<VkDescriptorBufferInfo>>& buffer_binding :
+         *descriptor_set_data->GetDescriptorBufferBindings()) {
+      std::stringstream descriptor_range_string;
+      std::stringstream descriptor_offset_string;
+      const uint32_t binding_number = buffer_binding.first;
+
+      // Get amount of descriptors in the current binding.
+      uint32_t descriptor_count =
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          descriptor_set_data->GetDescriptorSetLayoutData()
+              ->GetCreateInfo()
+              .pBindings[binding_number]
+              .descriptorCount;
+      // List of buffer names. One buffer name per array element.
+      std::vector<std::string> buffer_names(descriptor_count);
+
+      for (uint32_t array_element = 0; array_element < descriptor_count;
+           array_element++) {
+        const VkDescriptorBufferInfo& buffer_info =
+            buffer_binding.second[array_element];
+
+        const VkBufferCreateInfo& buffer_create_info =
+            device_data->buffers.Get(buffer_info.buffer)->GetCreateInfo();
+
+        // Check if the buffer has been copied already, i.e. it is stored in the
+        // |copied_buffers| map. If not, copy the buffer and store its contents
+        // to a file.
+        std::string buffer_name;
+        if (copied_buffers.count(buffer_info.buffer) == 0) {
+          // Generate name for the buffer.
+          std::ostringstream name_string_stream;
+          name_string_stream << "descriptor_" << descriptor_set_number << "_"
+                             << binding_number << "_" << array_element;
+          buffer_name = name_string_stream.str();
+
+          DEBUG_ASSERT((buffer_create_info.usage &
+                        (VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) != 0);
+
+          // Generate the file name.
+          std::string buffer_file_name =
+              global_data_->settings.output_file_prefix;
+          buffer_file_name.append("_").append(buffer_name).append(".bin");
+
+          // Copy the buffer to a host visible memory.
+          std::unique_ptr<BufferCopy> descriptor_buffer_copy =
+              std::make_unique<BufferCopy>(
+                  device_data, buffer_info.buffer, buffer_create_info.size,
+                  draw_call_state_.queue, GetCommandPool(device_data));
+
+          // Write the buffer contents to a file.
+          WriteDataToFile(buffer_file_name,
+                          descriptor_buffer_copy->GetCopiedData());
+
+          // Store the buffer name to the |copied_buffers| map.
+          copied_buffers.emplace(buffer_info.buffer, buffer_name);
+
+          // Create buffer declaration.
+          buffer_declaration_str
+              << "BUFFER " << buffer_name << " DATA_TYPE R8_UINT SIZE "
+              << buffer_create_info.size << " FILE BINARY " << buffer_file_name
+              << std::endl;
+        } else {
+          // Buffer is already copied. Get the buffer name from the map.
+          buffer_name = copied_buffers.at(buffer_info.buffer);
+        }
+
+        VkDeviceSize buffer_size = buffer_info.range;
+        if (buffer_size == VK_WHOLE_SIZE) {
+          buffer_size = buffer_create_info.size - buffer_info.offset;
+        }
+        descriptor_range_string << " " << buffer_size;
+        descriptor_offset_string << " " << buffer_info.offset;
+
+        buffer_names[array_element] = buffer_name;
+      }
+
+      const auto& descriptor_set_layout =
+          descriptor_set_data->GetDescriptorSetLayoutData()
+              ->GetCreateInfo()
+              .pBindings;
+      pipeline_str << "  BIND ";
+      // Single descriptors are bound using "BIND BUFFER" command and descriptor
+      // arrays are bound using "BIND BUFFER_ARRAY" command.
+      pipeline_str << (descriptor_count == 1 ? "BUFFER" : "BUFFER_ARRAY");
+      // Add buffer names (one per array element).
+      for (const std::string& buffer_name : buffer_names) {
+        pipeline_str << " " << buffer_name;
+      }
+      pipeline_str << " AS "
+                   << GetDescriptorTypeName(
+                          descriptor_set_layout->descriptorType)
+                   << " DESCRIPTOR_SET " << descriptor_set_number << " BINDING "
+                   << binding_number;
+
+      // Add descriptor buffer range and offsets.
+      pipeline_str << " DESCRIPTOR_RANGE" << descriptor_range_string.str();
+      pipeline_str << " DESCRIPTOR_OFFSET" << descriptor_offset_string.str();
+
+      // Add dynamic offset(s).
+      if (descriptor_set_layout->descriptorType ==
+              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC ||
+          descriptor_set_layout->descriptorType ==
+              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
+        pipeline_str << " OFFSET";
+        // Loop through all dynamic offsets of the current binding.
+        for (DynamicOffset offset :
+             descriptor_set_binding.second.dynamic_offsets.at(binding_number)) {
+          pipeline_str << " " << offset;
+        }
+      }
+      pipeline_str << std::endl;
+    }
+
+    // TODO(ilkkasaa): implement images and samplers here.
+  }
 }
 
 void DrawCallTracker::CreateIndexBufferDeclarations(

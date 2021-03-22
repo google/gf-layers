@@ -28,4 +28,8 @@
   # Android <mutex>.
   { include: ["<__mutex_base>", "private", "<mutex>", "public"] },
 
+  # Workaround for an old IWYU bug: <ext/alloc_traits.h> is wanted to be included if a vector
+  # is accessed with operator[].
+  # https://github.com/include-what-you-use/include-what-you-use/issues/166
+  { include: [ "<ext/alloc_traits.h>", private, "<vector>", public ] },
 ]

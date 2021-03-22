@@ -62,6 +62,30 @@ VkBufferCreateInfo DeepCopy(const VkBufferCreateInfo& create_info);
 // created with associated DeepCopy(...) function.
 void DeepDelete(const VkBufferCreateInfo& create_info);
 
+// Makes a deep copy of VkDescriptorSetLayoutBinding struct. The allocated
+// memory is not freed automatically. Use
+// DeepDelete(VkDescriptorSetLayoutBinding const*) to recursively free all
+// the allocated memory.
+VkDescriptorSetLayoutBinding DeepCopy(
+    const VkDescriptorSetLayoutBinding& descriptor_set_layout_binding);
+
+// Recursively deletes all the allocated memory of the given
+// VkDescriptorSetLayoutBinding struct. Should be used only for structs
+// created with associated DeepCopy(...) function.
+void DeepDelete(const VkDescriptorSetLayoutBinding& binding);
+
+// Makes a deep copy of VkDescriptorSetLayoutCreateInfo struct. The allocated
+// memory is not freed automatically. Use
+// DeepDelete(VkDescriptorSetLayoutCreateInfo const*) to recursively free all
+// the allocated memory.
+VkDescriptorSetLayoutCreateInfo DeepCopy(
+    const VkDescriptorSetLayoutCreateInfo& create_info);
+
+// Recursively deletes all the allocated memory of the given
+// VkDescriptorSetLayoutBinding struct. Should be used only for structs
+// created with associated DeepCopy(...) function.
+void DeepDelete(const VkDescriptorSetLayoutCreateInfo& create_info);
+
 // Makes a deep copy of VkGraphicsPipelineCreateInfo struct. The allocated
 // memory is not freed automatically. Use
 // DeepDelete(VkGraphicsPipelineCreateInfo const*) to recursively free all
@@ -73,6 +97,18 @@ VkGraphicsPipelineCreateInfo DeepCopy(
 // VkGraphicsPipelineCreateInfo struct. Should be used only for structs
 // created with associated DeepCopy(...) function.
 void DeepDelete(const VkGraphicsPipelineCreateInfo& create_info);
+
+// Makes a deep copy of VkPipelineLayoutCreateInfo struct. The allocated
+// memory is not freed automatically. Use
+// DeepDelete(VkPipelineLayoutCreateInfo const*) to recursively free all
+// the allocated memory.
+VkPipelineLayoutCreateInfo DeepCopy(
+    const VkPipelineLayoutCreateInfo& create_info);
+
+// Recursively deletes all the allocated memory of the given
+// VkPipelineLayoutCreateInfo struct. Should be used only for structs
+// created with associated DeepCopy(...) function.
+void DeepDelete(const VkPipelineLayoutCreateInfo& create_info);
 
 // Makes a deep copy of VkPipelineShaderStageCreateInfo struct. The allocated
 // memory is not freed automatically. Use

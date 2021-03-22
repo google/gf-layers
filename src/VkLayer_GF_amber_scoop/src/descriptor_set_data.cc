@@ -64,6 +64,7 @@ DescriptorSetData::FlattenedDescriptorType GetFlattenedDescriptorType(
       RUNTIME_ASSERT_MSG(false, "Should be unreachable.");
     }
   }
+  return DescriptorSetData::UNSUPPORTED;
 }
 }  // namespace
 

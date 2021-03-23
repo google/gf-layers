@@ -460,8 +460,8 @@ void DrawCallTracker::CreateDescriptorSetDeclarations(
                    << binding_number;
 
       // Add descriptor buffer range and offsets.
-      pipeline_str << " DESCRIPTOR_RANGE" << descriptor_range_string.str();
       pipeline_str << " DESCRIPTOR_OFFSET" << descriptor_offset_string.str();
+      pipeline_str << " DESCRIPTOR_RANGE" << descriptor_range_string.str();
 
       // Add dynamic offset(s).
       if (descriptor_set_layout->descriptorType ==

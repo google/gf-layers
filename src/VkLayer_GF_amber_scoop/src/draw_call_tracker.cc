@@ -380,6 +380,34 @@ void DrawCallTracker::CreateDescriptorSetDeclarations(
       // List of buffer names. One buffer name per array element.
       std::vector<std::string> buffer_names(descriptor_count);
 
+      const auto& descriptor_set_layout =
+          descriptor_set_data->GetDescriptorSetLayoutData()
+              ->GetCreateInfo()
+              .pBindings;
+
+      // Initialize dynamic offsets with zeroes. Initial values are used if the
+      // descriptor set doesn't use dynamic offsets.
+      std::vector<DynamicOffset> dynamic_offsets(descriptor_count, 0);
+      // Create dynamic offset bind string(s) and store the dynamic offset
+      // values to the vector defined above.
+      std::stringstream dynamic_offset_string;
+      if (descriptor_set_layout->descriptorType ==
+              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC ||
+          descriptor_set_layout->descriptorType ==
+              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
+        dynamic_offset_string << " OFFSET";
+        dynamic_offsets =
+            descriptor_set_binding.second.dynamic_offsets.at(binding_number);
+        // Loop through all dynamic offsets of the current binding.
+        for (DynamicOffset offset : dynamic_offsets) {
+          dynamic_offset_string << " " << offset;
+        }
+      }
+
+      // Loop through all descriptors (array elements) of this binding. Copy the
+      // contents of the buffer used by the descriptor to a binary file if it's
+      // not already copied and create buffer declaration string. Append the
+      // descriptor offset and range values to the BIND BUFFER command.
       for (uint32_t array_element = 0; array_element < descriptor_count;
            array_element++) {
         const VkDescriptorBufferInfo& buffer_info =
@@ -431,20 +459,20 @@ void DrawCallTracker::CreateDescriptorSetDeclarations(
           buffer_name = copied_buffers.at(buffer_info.buffer);
         }
 
-        VkDeviceSize buffer_size = buffer_info.range;
-        if (buffer_size == VK_WHOLE_SIZE) {
-          buffer_size = buffer_create_info.size - buffer_info.offset;
+        VkDeviceSize buffer_range = buffer_info.range;
+        // We can't use VK_WHOLE_SIZE as range, so we need to compute the actual
+        // range, ie. end of the buffer - offset - dynamic offset. Note: if
+        // dynamic offsets aren't used, the |dynamic_offsets| vector contains
+        // only zeroes, so it has no effect.
+        if (buffer_range == VK_WHOLE_SIZE) {
+          buffer_range = buffer_create_info.size - buffer_info.offset -
+                         dynamic_offsets[array_element];
         }
-        descriptor_range_string << " " << buffer_size;
         descriptor_offset_string << " " << buffer_info.offset;
-
+        descriptor_range_string << " " << buffer_range;
         buffer_names[array_element] = buffer_name;
       }
 
-      const auto& descriptor_set_layout =
-          descriptor_set_data->GetDescriptorSetLayoutData()
-              ->GetCreateInfo()
-              .pBindings;
       pipeline_str << "  BIND ";
       // Single descriptors are bound using "BIND BUFFER" command and descriptor
       // arrays are bound using "BIND BUFFER_ARRAY" command.
@@ -462,19 +490,7 @@ void DrawCallTracker::CreateDescriptorSetDeclarations(
       // Add descriptor buffer range and offsets.
       pipeline_str << " DESCRIPTOR_OFFSET" << descriptor_offset_string.str();
       pipeline_str << " DESCRIPTOR_RANGE" << descriptor_range_string.str();
-
-      // Add dynamic offset(s).
-      if (descriptor_set_layout->descriptorType ==
-              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC ||
-          descriptor_set_layout->descriptorType ==
-              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
-        pipeline_str << " OFFSET";
-        // Loop through all dynamic offsets of the current binding.
-        for (DynamicOffset offset :
-             descriptor_set_binding.second.dynamic_offsets.at(binding_number)) {
-          pipeline_str << " " << offset;
-        }
-      }
+      pipeline_str << dynamic_offset_string.str();
       pipeline_str << std::endl;
     }
 

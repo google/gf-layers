@@ -69,7 +69,8 @@ DescriptorSetData::FlattenedDescriptorType GetFlattenedDescriptorType(
 }  // namespace
 
 DescriptorSetData::DescriptorSetData(const DescriptorSetLayoutData* layout_data)
-    : descriptor_set_layout_data_(layout_data) {
+    : descriptor_set_layout_data_(std::make_unique<DescriptorSetLayoutData>(
+          layout_data->GetCreateInfo())) {
   const VkDescriptorSetLayoutCreateInfo& create_info =
       layout_data->GetCreateInfo();
 

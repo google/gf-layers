@@ -174,7 +174,7 @@ void DrawCallTracker::BindGraphicsDescriptorSet(
   const DescriptorSetData* descriptor_set_data =
       GetDeviceData()->descriptor_sets.Get(descriptor_set);
   const VkDescriptorSetLayoutCreateInfo& layout_create_info =
-      descriptor_set_data->GetDescriptorSetLayoutData()->GetCreateInfo();
+      descriptor_set_data->GetDescriptorSetLayoutData().GetCreateInfo();
 
   // Loop through all bindings in the descriptor set data to check if there's
   // any UNIFORM_BUFFER_DYNAMIC or STORAGE_BUFFER_DYNAMIC descriptors in the
@@ -374,7 +374,7 @@ void DrawCallTracker::CreateDescriptorSetDeclarations(
       uint32_t descriptor_count =
           // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
           descriptor_set_data->GetDescriptorSetLayoutData()
-              ->GetCreateInfo()
+              .GetCreateInfo()
               .pBindings[binding_number]
               .descriptorCount;
       // List of buffer names. One buffer name per array element.
@@ -382,7 +382,7 @@ void DrawCallTracker::CreateDescriptorSetDeclarations(
 
       const auto& descriptor_set_layout =
           descriptor_set_data->GetDescriptorSetLayoutData()
-              ->GetCreateInfo()
+              .GetCreateInfo()
               .pBindings;
 
       // Initialize dynamic offsets with zeroes. Initial values are used if the

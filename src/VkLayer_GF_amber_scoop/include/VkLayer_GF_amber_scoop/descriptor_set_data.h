@@ -53,9 +53,9 @@ class DescriptorSetData {
   }
 
   // Get pointer to the layout used to create this descriptor set.
-  [[nodiscard]] const DescriptorSetLayoutData* GetDescriptorSetLayoutData()
+  [[nodiscard]] const DescriptorSetLayoutData& GetDescriptorSetLayoutData()
       const {
-    return descriptor_set_layout_data_;
+    return *descriptor_set_layout_data_;
   }
 
   // Updates the descriptor sets' state with the given VkWriteDescriptorSet.
@@ -69,7 +69,7 @@ class DescriptorSetData {
 
  private:
   // Layout used to allocate this descriptor set.
-  const DescriptorSetLayoutData* descriptor_set_layout_data_;
+  std::unique_ptr<DescriptorSetLayoutData> descriptor_set_layout_data_;
   // |VkDescriptorBufferInfo| for each descriptor of "buffer" type.
   std::unordered_map<BindingNumber, std::vector<VkDescriptorBufferInfo>>
       descriptor_buffer_bindings_;

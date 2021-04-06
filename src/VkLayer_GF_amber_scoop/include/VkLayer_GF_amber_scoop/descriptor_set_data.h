@@ -18,6 +18,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 

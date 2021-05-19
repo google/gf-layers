@@ -494,7 +494,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
 }
 
 //
-// Our vkCreateShaderModule function.
+// Our vkCreatePipelineLayout function.
 //
 VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineLayout(
     VkDevice device, const VkPipelineLayoutCreateInfo* pCreateInfo,

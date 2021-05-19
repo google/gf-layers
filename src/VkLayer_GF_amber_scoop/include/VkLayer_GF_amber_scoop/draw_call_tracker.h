@@ -47,7 +47,7 @@ class DrawCallTracker {
     // Dynamic offsets used in this descriptor set. Key is the binding number of
     // the descriptor(s) and value is a list of dynamic offset(s) for the
     // binding.
-    std::unordered_map<BindingNumber, std::vector<BindingNumber>>
+    std::unordered_map<BindingNumber, std::vector<DynamicOffset>>
         dynamic_offsets;
   };
 

@@ -46,14 +46,14 @@ class DescriptorSetData {
   // descriptors will be stored when updating the descriptor set.
   explicit DescriptorSetData(const DescriptorSetLayoutData* layout_data);
 
-  // Get the descriptor bindings of buffer type.
+  // Returns the descriptor bindings of buffer type.
   [[nodiscard]] const std::unordered_map<BindingNumber,
                                          std::vector<VkDescriptorBufferInfo>>*
   GetDescriptorBufferBindings() const {
     return &descriptor_buffer_bindings_;
   }
 
-  // Get pointer to the layout used to create this descriptor set.
+  // Returns pointer to the layout used to create this descriptor set.
   [[nodiscard]] const DescriptorSetLayoutData& GetDescriptorSetLayoutData()
       const {
     return *descriptor_set_layout_data_;
@@ -63,10 +63,6 @@ class DescriptorSetData {
   void WriteDescriptorSet(const VkWriteDescriptorSet& write_descriptor_set);
 
   // TODO(ilkkasaa): implement CopyDescriptorSet function.
-  /*
-  void CopyDescriptorSet(const VkCopyDescriptorSet& copy_descriptor_set) {
-    RUNTIME_ASSERT_MSG(false, "CopyDescriptorSet not implemented.");
-  }*/
 
  private:
   // Layout used to allocate this descriptor set.

@@ -58,10 +58,10 @@ VkDescriptorSetLayoutCreateInfo DeepCopy(
     const VkDescriptorSetLayoutCreateInfo& create_info) {
   VkDescriptorSetLayoutCreateInfo result = create_info;
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  VkDescriptorSetLayoutBinding* bindings;
-  bindings = create_info.bindingCount > 0
-                 ? new VkDescriptorSetLayoutBinding[create_info.bindingCount]
-                 : nullptr;
+  VkDescriptorSetLayoutBinding* bindings =
+      create_info.bindingCount > 0
+          ? new VkDescriptorSetLayoutBinding[create_info.bindingCount]
+          : nullptr;
 
   for (uint32_t i = 0; i < create_info.bindingCount; i++) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)

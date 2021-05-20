@@ -58,10 +58,10 @@ export PATH
 
 # Get cppcheck.
 
-CCPCHECK_OUT="cppcheck-2.1"
+CCPCHECK_OUT="cppcheck-2.4.1"
 
 if test ! -f "${CCPCHECK_OUT}.touch"; then
-  git clone --branch 2.1 --depth 1 https://github.com/danmar/cppcheck.git "${CCPCHECK_OUT}"
+  git clone --branch 2.4.1 --depth 1 https://github.com/danmar/cppcheck.git "${CCPCHECK_OUT}"
   pushd "${CCPCHECK_OUT}"
     mkdir build
     pushd build

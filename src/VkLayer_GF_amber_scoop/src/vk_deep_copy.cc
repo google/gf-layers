@@ -32,6 +32,54 @@ void DeepDelete(const VkBufferCreateInfo& create_info) {
   }
 }
 
+VkDescriptorSetLayoutBinding DeepCopy(
+    const VkDescriptorSetLayoutBinding& descriptor_set_layout_binding) {
+  VkDescriptorSetLayoutBinding result = descriptor_set_layout_binding;
+
+  if (descriptor_set_layout_binding.pImmutableSamplers == nullptr) {
+    return result;
+  }
+
+  // Copy immutable sampler handles.
+  result.pImmutableSamplers =
+      CopyArray(descriptor_set_layout_binding.pImmutableSamplers,
+                descriptor_set_layout_binding.descriptorCount);
+
+  return result;
+}
+
+void DeepDelete(const VkDescriptorSetLayoutBinding& binding) {
+  // Delete immutable sampler handles.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete[] binding.pImmutableSamplers;
+}
+
+VkDescriptorSetLayoutCreateInfo DeepCopy(
+    const VkDescriptorSetLayoutCreateInfo& create_info) {
+  VkDescriptorSetLayoutCreateInfo result = create_info;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  VkDescriptorSetLayoutBinding* bindings =
+      create_info.bindingCount > 0
+          ? new VkDescriptorSetLayoutBinding[create_info.bindingCount]
+          : nullptr;
+
+  for (uint32_t i = 0; i < create_info.bindingCount; i++) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    bindings[i] = DeepCopy(create_info.pBindings[i]);
+  }
+  result.pBindings = bindings;
+  return result;
+}
+
+void DeepDelete(const VkDescriptorSetLayoutCreateInfo& create_info) {
+  for (uint32_t i = 0; i < create_info.bindingCount; i++) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    DeepDelete(create_info.pBindings[i]);
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete[] create_info.pBindings;
+}
+
 VkGraphicsPipelineCreateInfo DeepCopy(
     const VkGraphicsPipelineCreateInfo& create_info) {
   VkGraphicsPipelineCreateInfo result = create_info;
@@ -122,6 +170,23 @@ void DeepDelete(const VkGraphicsPipelineCreateInfo& create_info) {
   delete create_info.pRasterizationState;
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   delete create_info.pDepthStencilState;
+}
+
+VkPipelineLayoutCreateInfo DeepCopy(
+    const VkPipelineLayoutCreateInfo& create_info) {
+  VkPipelineLayoutCreateInfo result = create_info;
+  result.pSetLayouts =
+      CopyArray(create_info.pSetLayouts, create_info.setLayoutCount);
+  result.pPushConstantRanges = CopyArray(create_info.pPushConstantRanges,
+                                         create_info.pushConstantRangeCount);
+  return result;
+}
+
+void DeepDelete(const VkPipelineLayoutCreateInfo& create_info) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete[] create_info.pSetLayouts;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete[] create_info.pPushConstantRanges;
 }
 
 VkPipelineShaderStageCreateInfo DeepCopy(

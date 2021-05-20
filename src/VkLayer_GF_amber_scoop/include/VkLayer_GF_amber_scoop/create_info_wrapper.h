@@ -31,13 +31,19 @@ template <typename CreateInfoType>
 class CreateInfoWrapper {
  public:
   explicit CreateInfoWrapper(const CreateInfoType& create_info)
-      : create_info_(DeepCopy(create_info)) {}
+      : create_info_(std::make_unique<CreateInfoType>(DeepCopy(create_info))) {}
 
-  // Default move constructor and move assign operator.
+  // Default move constructor and move assign operator. Moves the ownership of
+  // the |create_info_| to the other object.
   CreateInfoWrapper(CreateInfoWrapper&& other) noexcept = default;
   CreateInfoWrapper& operator=(CreateInfoWrapper&& other) noexcept = default;
 
-  virtual ~CreateInfoWrapper() { DeepDelete(create_info_); }
+  virtual ~CreateInfoWrapper() {
+    // |create_info| may be nullptr if the ownership has been moved.
+    if (create_info_ != nullptr) {
+      DeepDelete(*create_info_);
+    }
+  }
 
   // Disabled copy constructor and copy assign operator.
   CreateInfoWrapper(const CreateInfoWrapper&) = delete;
@@ -45,16 +51,19 @@ class CreateInfoWrapper {
 
   // Returns the create info struct.
   [[nodiscard]] const CreateInfoType& GetCreateInfo() const {
-    return create_info_;
+    return *create_info_;
   }
 
  private:
-  CreateInfoType create_info_;
+  std::unique_ptr<CreateInfoType> create_info_;
 };
 
 // Type aliases for create info structs wrapped to CreateInfoWrapper.
 
 using BufferData = CreateInfoWrapper<VkBufferCreateInfo>;
+using DescriptorSetLayoutData =
+    CreateInfoWrapper<VkDescriptorSetLayoutCreateInfo>;
+using PipelineLayoutData = CreateInfoWrapper<VkPipelineLayoutCreateInfo>;
 using ShaderModuleData = CreateInfoWrapper<VkShaderModuleCreateInfo>;
 
 }  // namespace gf_layers::amber_scoop_layer

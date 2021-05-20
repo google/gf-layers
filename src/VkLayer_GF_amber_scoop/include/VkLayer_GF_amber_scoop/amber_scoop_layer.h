@@ -24,6 +24,7 @@
 
 #include "VkLayer_GF_amber_scoop/command_buffer_data.h"
 #include "VkLayer_GF_amber_scoop/create_info_wrapper.h"
+#include "VkLayer_GF_amber_scoop/descriptor_set_data.h"
 #include "VkLayer_GF_amber_scoop/graphics_pipeline_data.h"
 #include "gf_layers_layer_util/util.h"
 
@@ -57,21 +58,33 @@ struct DeviceData {
 
   // Other device functions:
 
+  // vkAllocate* and vkFree* functions:
   PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers = {};
   PFN_vkFreeCommandBuffers vkFreeCommandBuffers = {};
+  PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets = {};
+  PFN_vkFreeDescriptorSets vkFreeDescriptorSets = {};
+  // vkCreate* and vkDelete* functions:
   PFN_vkCreateBuffer vkCreateBuffer = {};
   PFN_vkDestroyBuffer vkDestroyBuffer = {};
   PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = {};
+  PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout = {};
+  PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout = {};
+  PFN_vkCreatePipelineLayout vkCreatePipelineLayout = {};
+  PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout = {};
   PFN_vkCreateShaderModule vkCreateShaderModule = {};
   PFN_vkDestroyShaderModule vkDestroyShaderModule = {};
-  PFN_vkQueueSubmit vkQueueSubmit = {};
+  // vkCmd* functions:
   PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass = {};
-  PFN_vkCmdDraw vkCmdDraw = {};
-  PFN_vkCmdDrawIndexed vkCmdDrawIndexed = {};
+  PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets = {};
   PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = {};
   PFN_vkCmdBindPipeline vkCmdBindPipeline = {};
   PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers = {};
+  PFN_vkCmdDraw vkCmdDraw = {};
+  PFN_vkCmdDrawIndexed vkCmdDrawIndexed = {};
   PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = {};
+  // Others:
+  PFN_vkQueueSubmit vkQueueSubmit = {};
+  PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets = {};
 
   // Functions used by the layer but not intercepted:
   PFN_vkAllocateMemory vkAllocateMemory = {};
@@ -93,8 +106,12 @@ struct DeviceData {
 
   ProtectedMap<VkBuffer, BufferData> buffers;
   ProtectedMap<VkCommandBuffer, CommandBufferData> command_buffers_data;
+  ProtectedMap<VkDescriptorSet, DescriptorSetData> descriptor_sets;
+  ProtectedMap<VkDescriptorSetLayout, DescriptorSetLayoutData>
+      descriptor_set_layouts;
   ProtectedMap<VkPipeline, std::unique_ptr<GraphicsPipelineData>>
       graphics_pipelines;
+  ProtectedMap<VkPipelineLayout, PipelineLayoutData> pipeline_layouts;
 
   // Map of shader modules. Shared pointers are used because
   // |GraphicsPipelineData| may also hold a reference. |ShaderModuleData| will

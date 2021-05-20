@@ -58,11 +58,12 @@ export PATH
 
 # Get cppcheck.
 
-CCPCHECK_OUT="cppcheck-2.1"
+CCPCHECK_OUT="cppcheck-3af3d7fc06f0acfc602cdda94ace273e170788e5"
 
 if test ! -f "${CCPCHECK_OUT}.touch"; then
-  git clone --branch 2.1 --depth 1 https://github.com/danmar/cppcheck.git "${CCPCHECK_OUT}"
+  git clone --branch main --depth 1 https://github.com/danmar/cppcheck.git "${CCPCHECK_OUT}"
   pushd "${CCPCHECK_OUT}"
+  git checkout 3af3d7fc06f0acfc602cdda94ace273e170788e5
     mkdir build
     pushd build
       cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=./install

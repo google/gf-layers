@@ -118,6 +118,27 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
 }
 
 //
+// Our vkCmdBindDescriptorSets function.
+//
+VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(
+    VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+    VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount,
+    const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount,
+    const uint32_t* pDynamicOffsets) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(commandBuffer));
+
+  // Call the original function.
+  device_data->vkCmdBindDescriptorSets(
+      commandBuffer, pipelineBindPoint, layout, firstSet, descriptorSetCount,
+      pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
+
+  AddCommand(device_data, commandBuffer,
+             std::make_unique<CmdBindDescriptorSets>(
+                 pipelineBindPoint, layout, firstSet, descriptorSetCount,
+                 pDescriptorSets, dynamicOffsetCount, pDynamicOffsets));
+}
+
+//
 // Our vkCmdBindIndexBuffer function.
 //
 VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer,
@@ -294,6 +315,52 @@ void vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
 }
 
 //
+// Our vkAllocateDescriptorSets function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateDescriptorSets(
+    VkDevice device, VkDescriptorSetAllocateInfo const* pAllocateInfo,
+    VkDescriptorSet* pDescriptorSets) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  VkResult result = device_data->vkAllocateDescriptorSets(device, pAllocateInfo,
+                                                          pDescriptorSets);
+  if (result != VK_SUCCESS) {
+    return result;
+  }
+
+  // Store all descriptor sets and the layouts used to allocate them.
+  for (uint32_t i = 0; i < pAllocateInfo->descriptorSetCount; i++) {
+    const DescriptorSetLayoutData* layout_data =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        device_data->descriptor_set_layouts.Get(pAllocateInfo->pSetLayouts[i]);
+    device_data->descriptor_sets.Put(
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        pDescriptorSets[i], DescriptorSetData(layout_data));
+  }
+  return result;
+}
+
+//
+// Our vkFreeDescriptorSets function.
+//
+void vkFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
+                          uint32_t descriptorSetCount,
+                          VkDescriptorSet const* pDescriptorSets) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  device_data->vkFreeDescriptorSets(device, descriptorPool, descriptorSetCount,
+                                    pDescriptorSets);
+
+  // Remove descriptor sets from the device data.
+  for (uint32_t i = 0; i < descriptorSetCount; i++) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    device_data->descriptor_sets.Remove(pDescriptorSets[i]);
+  }
+}
+
+//
 // Our vkCreateBuffer function.
 //
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -335,6 +402,43 @@ void vkDestroyBuffer(VkDevice device, VkBuffer buffer,
   device_data->vkDestroyBuffer(device, buffer, pAllocator);
 
   device_data->buffers.Remove(buffer);
+}
+
+//
+// Our vkCreateDescriptorSetLayout function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorSetLayout(
+    VkDevice device, const VkDescriptorSetLayoutCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDescriptorSetLayout* pSetLayout) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  VkResult result = device_data->vkCreateDescriptorSetLayout(
+      device, pCreateInfo, pAllocator, pSetLayout);
+
+  if (result != VK_SUCCESS) {
+    return result;
+  }
+
+  device_data->descriptor_set_layouts.Put(
+      *pSetLayout, DescriptorSetLayoutData(*pCreateInfo));
+  return result;
+}
+
+//
+// Our vkDestroyDescriptorSetLayout function.
+//
+void vkDestroyDescriptorSetLayout(VkDevice device,
+                                  VkDescriptorSetLayout descriptorSetLayout,
+                                  VkAllocationCallbacks* pAllocator) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  device_data->vkDestroyDescriptorSetLayout(device, descriptorSetLayout,
+                                            pAllocator);
+  // Remove the layout from the device data.
+  device_data->descriptor_set_layouts.Remove(descriptorSetLayout);
 }
 
 //
@@ -387,6 +491,38 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
   }
 
   return result;
+}
+
+//
+// Our vkCreatePipelineLayout function.
+//
+VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineLayout(
+    VkDevice device, const VkPipelineLayoutCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkPipelineLayout* pPipelineLayout) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  VkResult result = device_data->vkCreatePipelineLayout(
+      device, pCreateInfo, pAllocator, pPipelineLayout);
+  if (result != VK_SUCCESS) {
+    return result;
+  }
+  device_data->pipeline_layouts.Put(*pPipelineLayout,
+                                    PipelineLayoutData(*pCreateInfo));
+  return result;
+}
+
+//
+// Our vkDestroyPipelineLayout function.
+//
+void vkDestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout,
+                             VkAllocationCallbacks const* pAllocator) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+  // Call the original function.
+  device_data->vkDestroyPipelineLayout(device, pipelineLayout, pAllocator);
+
+  device_data->pipeline_layouts.Remove(pipelineLayout);
 }
 
 //
@@ -462,9 +598,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
       // command buffer being processed, i.e. what pipeline is bound, push
       // constant values, bound vertex and index buffers, etc. This information
       // is needed when a draw call needs to be processed to an Amber file.
-      DrawCallTracker draw_call_tracker(global_data);
-      draw_call_tracker.GetDrawCallState()->command_buffer = command_buffer;
-      draw_call_tracker.GetDrawCallState()->queue = queue;
+      DrawCallTracker draw_call_tracker(global_data, command_buffer, queue);
 
       // Process all submitted commands. Most of the commands update the state
       // of the draw call tracker and draw commands generate the Amber files.
@@ -484,6 +618,38 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
       device_data->vkQueueSubmit(queue, submitCount, pSubmits, fence);
 
   return result;
+}
+
+//
+// Our vkUpdateDescriptorSets function.
+//
+void vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
+                            VkWriteDescriptorSet const* pDescriptorWrites,
+                            uint32_t descriptorCopyCount,
+                            VkCopyDescriptorSet const* pDescriptorCopies) {
+  DeviceData* device_data = GetDeviceData(DeviceKey(device));
+
+  // Call the original function.
+  device_data->vkUpdateDescriptorSets(device, descriptorWriteCount,
+                                      pDescriptorWrites, descriptorCopyCount,
+                                      pDescriptorCopies);
+
+  if (descriptorCopyCount > 0) {
+    RUNTIME_ASSERT_MSG(false, "Not handling descriptor copies yet.");
+  }
+
+  // Go through all descriptor writes.
+  for (uint32_t descriptor_write_idx = 0;
+       descriptor_write_idx < descriptorWriteCount; descriptor_write_idx++) {
+    const VkWriteDescriptorSet& write_descriptor_set =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        pDescriptorWrites[descriptor_write_idx];
+
+    // Update the descriptor set.
+    DescriptorSetData* descriptor_set =
+        device_data->descriptor_sets.Get(write_descriptor_set.dstSet);
+    descriptor_set->WriteDescriptorSet(write_descriptor_set);
+  }
 }
 
 // The following functions are standard Vulkan functions that most Vulkan layers
@@ -702,13 +868,21 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
   HANDLE(vkAllocateCommandBuffers)
   HANDLE(vkFreeCommandBuffers)
+  HANDLE(vkAllocateDescriptorSets)
+  HANDLE(vkFreeDescriptorSets)
   HANDLE(vkCreateBuffer)
   HANDLE(vkDestroyBuffer)
+  HANDLE(vkCreateDescriptorSetLayout)
+  HANDLE(vkDestroyDescriptorSetLayout)
   HANDLE(vkCreateGraphicsPipelines)
+  HANDLE(vkCreatePipelineLayout)
+  HANDLE(vkDestroyPipelineLayout)
   HANDLE(vkCreateShaderModule)
   HANDLE(vkDestroyShaderModule)
   HANDLE(vkQueueSubmit)
+  HANDLE(vkUpdateDescriptorSets)
   HANDLE(vkCmdBeginRenderPass)
+  HANDLE(vkCmdBindDescriptorSets)
   HANDLE(vkCmdBindIndexBuffer)
   HANDLE(vkCmdBindPipeline)
   HANDLE(vkCmdBindVertexBuffers)
@@ -762,13 +936,21 @@ vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   // Other device functions that this layer intercepts:
   HANDLE(vkAllocateCommandBuffers)
   HANDLE(vkFreeCommandBuffers)
+  HANDLE(vkAllocateDescriptorSets)
+  HANDLE(vkFreeDescriptorSets)
   HANDLE(vkCreateBuffer)
   HANDLE(vkDestroyBuffer)
+  HANDLE(vkCreateDescriptorSetLayout)
+  HANDLE(vkDestroyDescriptorSetLayout)
   HANDLE(vkCreateGraphicsPipelines)
+  HANDLE(vkCreatePipelineLayout)
+  HANDLE(vkDestroyPipelineLayout)
   HANDLE(vkCreateShaderModule)
   HANDLE(vkDestroyShaderModule)
   HANDLE(vkQueueSubmit)
+  HANDLE(vkUpdateDescriptorSets)
   HANDLE(vkCmdBeginRenderPass)
+  HANDLE(vkCmdBindDescriptorSets)
   HANDLE(vkCmdBindIndexBuffer)
   HANDLE(vkCmdBindPipeline)
   HANDLE(vkCmdBindVertexBuffers)

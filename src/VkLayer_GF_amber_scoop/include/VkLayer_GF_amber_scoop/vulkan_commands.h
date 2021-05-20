@@ -75,6 +75,44 @@ class CmdBeginRenderPass : public Cmd {
   VkSubpassContents contents_;
 };
 
+class CmdBindDescriptorSets : public Cmd {
+ public:
+  CmdBindDescriptorSets(VkPipelineBindPoint pipeline_bind_point,
+                        VkPipelineLayout layout, uint32_t first_set,
+                        uint32_t descriptor_set_count,
+                        const VkDescriptorSet* descriptor_sets,
+                        uint32_t dynamic_offset_count,
+                        const uint32_t* dynamic_offsets)
+      : pipeline_bind_point_(pipeline_bind_point),
+        layout_(layout),
+        first_set_(first_set) {
+    if (descriptor_set_count > 0) {
+      descriptor_sets_.assign(
+          descriptor_sets,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          descriptor_sets + descriptor_set_count);
+    }
+
+    if (dynamic_offset_count > 0) {
+      dynamic_offsets_.assign(
+          dynamic_offsets,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          dynamic_offsets + dynamic_offset_count);
+    }
+  }
+
+  // Sets vertex buffer bindings and their offsets.
+  void ProcessSubmittedCommand(
+      DrawCallTracker* draw_call_state_tracker) override;
+
+ private:
+  VkPipelineBindPoint pipeline_bind_point_;
+  VkPipelineLayout layout_;
+  uint32_t first_set_;
+  std::vector<VkDescriptorSet> descriptor_sets_;
+  std::vector<uint32_t> dynamic_offsets_;
+};
+
 class CmdBindIndexBuffer : public Cmd {
  public:
   CmdBindIndexBuffer(VkBuffer buffer, VkDeviceSize offset,
